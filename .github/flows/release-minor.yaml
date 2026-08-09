@@ -1,0 +1,35 @@
+name: Minor Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate and create Minor Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST_TAG=$(git tag -l "v[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname | head -n 1)
+
+          if [ -z "$LATEST_TAG" ]; then
+            NEW_TAG="v0.1.0"
+          else
+            RAW_VER="${LATEST_TAG#v}"
+            MAJOR=$(echo "$RAW_VER" | cut -d. -f1)
+            MINOR=$(echo "$RAW_VER" | cut -d. -f2)
+            NEW_MINOR=$((MINOR + 1))
+            NEW_TAG="v${MAJOR}.${NEW_MINOR}.0"
+          fi
+
+          echo "Creating Minor release: $NEW_TAG"
+          gh release create "$NEW_TAG" --generate-notes --title "$NEW_TAG"
