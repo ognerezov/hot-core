@@ -1,3 +1,4 @@
+// Package tools provides generic utility functions for data manipulation, file handling, and more.
 package tools
 
 import "encoding/json"
