@@ -46,13 +46,13 @@ func NewLambdaBuilder(stack constructs.Construct, projectName string, arch strin
 }
 
 // NewPollLambdaBuilder initializes a new LambdaBuilder with mandatory project name and architecture.
-func NewPollLambdaBuilder(stack constructs.Construct, projectName string, arch string) *LambdaBuilder {
+func NewPollLambdaBuilder(stack constructs.Construct, projectName string, arch string, arn string) *LambdaBuilder {
 	return &LambdaBuilder{
 		stack:          stack,
 		projectName:    projectName,
 		architecture:   arch,
 		timeoutSeconds: 30,
-		role:           *GetLambdaPoolRole(stack),
+		role:           *GetLambdaPoolRole(stack, arn),
 	}
 }
 
@@ -126,7 +126,7 @@ func GetLambdaExecutionRole(stack constructs.Construct) *awsiam.Role {
 }
 
 // getLambdaPoolRole creates the execution role with cognito pool access for Lambda functions.
-func getLambdaPoolRole(stack constructs.Construct) *awsiam.Role {
+func getLambdaPoolRole(stack constructs.Construct, arn string) *awsiam.Role {
 	roleName := "pool-access-lambda-role"
 	lambdaRole := awsiam.NewRole(stack, jsii.String(roleName), &awsiam.RoleProps{
 		RoleName:    jsii.String(roleName),
@@ -136,19 +136,23 @@ func getLambdaPoolRole(stack constructs.Construct) *awsiam.Role {
 	lambdaRole.AddManagedPolicy(
 		awsiam.ManagedPolicy_FromAwsManagedPolicyName(jsii.String("service-role/AWSLambdaVPCAccessExecutionRole")),
 	)
+	userPool := "*"
+	if arn != "" {
+		userPool = arn
+	}
 	lambdaRole.AddToPolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
-		Actions:   jsii.Strings("cognito-idp:AdminGetUser", "cognito-idp:ListUsers"),
-		Resources: jsii.Strings("*"),
+		Actions:   jsii.Strings("cognito-idp:AdminGetUser", "cognito-idp:AdminCreateUser", "cognito-idp:AdminSetUserPassword", "cognito-idp:ListUsers"),
+		Resources: jsii.Strings(userPool),
 	}))
 	return &lambdaRole
 }
 
 // GetLambdaPoolRole returns the singleton PoolAccessRole, creating it if necessary.
-func GetLambdaPoolRole(stack constructs.Construct) *awsiam.Role {
+func GetLambdaPoolRole(stack constructs.Construct, arn string) *awsiam.Role {
 	if PoolAccessRole != nil {
 		return PoolAccessRole
 	}
 
-	PoolAccessRole = getLambdaPoolRole(stack)
+	PoolAccessRole = getLambdaPoolRole(stack, arn)
 	return PoolAccessRole
 }
