@@ -19,9 +19,10 @@ var (
 )
 
 type UserMessage[T any] struct {
-	Payload  T      `json:"payload"`
-	Provider string `json:"provider"`
-	UserID   string `json:"userId"`
+	Payload    T      `json:"payload"`
+	Provider   string `json:"provider"`
+	UserID     string `json:"userId"`
+	RawPayload string `json:"rawPayload"`
 }
 
 func SetSQSClient(client *sqs.Client) {
@@ -45,7 +46,7 @@ func GetSQSClient() *sqs.Client {
 	return sqsClient
 }
 
-func SQSMessage[T any](url string, msg UserMessage[T]) (*sqs.SendMessageOutput, error) {
+func SQSMessage(url string, msg any) (*sqs.SendMessageOutput, error) {
 	sqsBody, err := json.Marshal(msg)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to marshal SQS payload")
@@ -68,6 +69,10 @@ func NewQueue[T any](url string) *Queue[T] {
 	return &Queue[T]{url: url}
 }
 
-func (q *Queue[T]) Send(msg UserMessage[T]) (*sqs.SendMessageOutput, error) {
+func (q *Queue[T]) SendUserMessage(msg UserMessage[T]) (*sqs.SendMessageOutput, error) {
+	return SQSMessage(q.url, msg)
+}
+
+func (q *Queue[T]) Send(msg T) (*sqs.SendMessageOutput, error) {
 	return SQSMessage(q.url, msg)
 }
