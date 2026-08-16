@@ -1,7 +1,17 @@
 package aws
 
 import (
+	"context"
+	"io"
+	"net/http"
+	"os"
+	"strings"
 	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParseS3Uri(t *testing.T) {
@@ -57,4 +67,104 @@ func TestParseS3Uri(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUploadToS3(t *testing.T) {
+	oldS3 := s3Client
+	oldTM := tmClient
+	defer func() {
+		s3Client = oldS3
+		tmClient = oldTM
+	}()
+
+	mockClient := &http.Client{
+		Transport: MockTransport(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		}),
+	}
+
+	cfg, _ := config.LoadDefaultConfig(context.Background(),
+		config.WithHTTPClient(mockClient),
+		config.WithRegion("us-east-1"),
+		config.WithRequestChecksumCalculation(aws.RequestChecksumCalculationWhenRequired),
+	)
+	SetS3Client(s3.NewFromConfig(cfg))
+
+	tmpFile, err := os.CreateTemp("", "test-upload")
+	assert.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+	tmpFile.WriteString("test content")
+	tmpFile.Close()
+
+	err = UploadToS3("my-bucket", "my-key", tmpFile.Name(), nil)
+	assert.NoError(t, err)
+}
+
+func TestDownloadFromS3(t *testing.T) {
+	oldS3 := s3Client
+	oldTM := tmClient
+	defer func() {
+		s3Client = oldS3
+		tmClient = oldTM
+	}()
+
+	mockClient := &http.Client{
+		Transport: MockTransport(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(strings.NewReader("test content")),
+			}, nil
+		}),
+	}
+
+	cfg, _ := config.LoadDefaultConfig(context.Background(),
+		config.WithHTTPClient(mockClient),
+		config.WithRegion("us-east-1"),
+		config.WithRequestChecksumCalculation(aws.RequestChecksumCalculationWhenRequired),
+	)
+	SetS3Client(s3.NewFromConfig(cfg))
+
+	tmpFile, err := os.CreateTemp("", "test-download")
+	assert.NoError(t, err)
+	destPath := tmpFile.Name()
+	tmpFile.Close()
+	defer os.Remove(destPath)
+
+	err = DownloadFromS3("my-bucket", "my-key", destPath)
+	assert.NoError(t, err)
+
+	content, _ := os.ReadFile(destPath)
+	assert.Equal(t, "test content", string(content))
+}
+
+func TestGetObjectAsBase64(t *testing.T) {
+	oldS3 := s3Client
+	oldTM := tmClient
+	defer func() {
+		s3Client = oldS3
+		tmClient = oldTM
+	}()
+
+	mockClient := &http.Client{
+		Transport: MockTransport(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(strings.NewReader("hello world")),
+			}, nil
+		}),
+	}
+
+	cfg, _ := config.LoadDefaultConfig(context.Background(),
+		config.WithHTTPClient(mockClient),
+		config.WithRegion("us-east-1"),
+		config.WithRequestChecksumCalculation(aws.RequestChecksumCalculationWhenRequired),
+	)
+	SetS3Client(s3.NewFromConfig(cfg))
+
+	base64Str, err := GetObjectAsBase64(context.Background(), "my-bucket", "my-key")
+	assert.NoError(t, err)
+	assert.Equal(t, "aGVsbG8gd29ybGQ=", base64Str)
 }

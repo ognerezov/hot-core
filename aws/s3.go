@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -12,7 +13,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/rs/zerolog/log"
@@ -26,12 +27,16 @@ const (
 var (
 	s3Client *s3.Client
 	signer   *s3.PresignClient
+	tmClient *transfermanager.Client
 )
 
 // SetS3Client sets a custom S3 client and initializes a new presigner.
 func SetS3Client(client *s3.Client) {
 	s3Client = client
 	signer = s3.NewPresignClient(s3Client)
+	tmClient = transfermanager.New(s3Client, func(o *transfermanager.Options) {
+		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+	})
 }
 
 func getS3Client() *s3.Client {
@@ -46,7 +51,20 @@ func getS3Client() *s3.Client {
 
 	s3Client = s3.NewFromConfig(cfg)
 	signer = s3.NewPresignClient(s3Client)
+	tmClient = transfermanager.New(s3Client, func(o *transfermanager.Options) {
+		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+	})
 	return s3Client
+}
+
+func getTMClient() *transfermanager.Client {
+	if tmClient != nil {
+		return tmClient
+	}
+	tmClient = transfermanager.New(getS3Client(), func(o *transfermanager.Options) {
+		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+	})
+	return tmClient
 }
 
 // GetSigner returns a singleton S3 presigner, initializing it if necessary.
@@ -147,10 +165,11 @@ func DownloadFromS3(bucket, key, destPath string) error {
 	}
 	defer tools.CloseAny(file)
 
-	downloader := manager.NewDownloader(getS3Client())
-	_, err = downloader.Download(context.Background(), file, &s3.GetObjectInput{
-		Bucket: &bucket,
-		Key:    &key,
+	tm := getTMClient()
+	_, err = tm.DownloadObject(context.Background(), &transfermanager.DownloadObjectInput{
+		Bucket:   &bucket,
+		Key:      &key,
+		WriterAt: file,
 	})
 	return err
 }
@@ -164,9 +183,9 @@ func UploadToS3(bucket, key, srcPath string, meta *map[string]string) error {
 	}
 	defer tools.CloseAny(file)
 
-	uploader := manager.NewUploader(getS3Client())
+	tm := getTMClient()
 	contentType, _, _ := tools.DetectMediaTypeFromFile(srcPath)
-	input := s3.PutObjectInput{
+	input := transfermanager.UploadObjectInput{
 		Bucket:      &bucket,
 		Key:         &key,
 		Body:        file,
@@ -175,7 +194,7 @@ func UploadToS3(bucket, key, srcPath string, meta *map[string]string) error {
 	if meta != nil {
 		input.Metadata = *meta
 	}
-	_, err = uploader.Upload(context.Background(), &input)
+	_, err = tm.UploadObject(context.Background(), &input)
 	return err
 }
 
@@ -251,12 +270,10 @@ func GetObjectAsBase64FromUri(ctx context.Context, uri string) (string, error) {
 
 // GetObjectAsBase64 downloads an object from S3 and returns it as a Base64 encoded string.
 func GetObjectAsBase64(ctx context.Context, bucket, key string) (string, error) {
-	client := getS3Client()
+	tm := getTMClient()
 
-	// Download object to a buffer
-	buffer := manager.NewWriteAtBuffer([]byte{})
-	downloader := manager.NewDownloader(client)
-	_, err := downloader.Download(ctx, buffer, &s3.GetObjectInput{
+	// Download object
+	out, err := tm.GetObject(ctx, &transfermanager.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
@@ -264,8 +281,13 @@ func GetObjectAsBase64(ctx context.Context, bucket, key string) (string, error) 
 		return "", fmt.Errorf("failed to download object: %w", err)
 	}
 
+	data, err := io.ReadAll(out.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read object body: %w", err)
+	}
+
 	// Encode to Base64
-	encodedString := base64.StdEncoding.EncodeToString(buffer.Bytes())
+	encodedString := base64.StdEncoding.EncodeToString(data)
 
 	return encodedString, nil
 }
