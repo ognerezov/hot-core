@@ -53,7 +53,7 @@ func SQSMessage[T any](url string, msg UserMessage[T]) (*sqs.SendMessageOutput, 
 	}
 	client := GetSQSClient()
 
-	log.Info().Str("queueUrl", url).Msgf("Sending message to SQS %v", sqsBody)
+	log.Info().Str("queueUrl", url).Msgf("Sending message to SQS %s", string(sqsBody))
 	return client.SendMessage(context.Background(), &sqs.SendMessageInput{
 		QueueUrl:    aws.String(url),
 		MessageBody: aws.String(string(sqsBody)),
