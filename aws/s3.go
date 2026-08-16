@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -39,7 +40,7 @@ func SetS3Client(client *s3.Client) {
 	})
 }
 
-func getS3Client() *s3.Client {
+func GetS3Client() *s3.Client {
 	if s3Client != nil {
 		return s3Client
 	}
@@ -61,7 +62,7 @@ func getTMClient() *transfermanager.Client {
 	if tmClient != nil {
 		return tmClient
 	}
-	tmClient = transfermanager.New(getS3Client(), func(o *transfermanager.Options) {
+	tmClient = transfermanager.New(GetS3Client(), func(o *transfermanager.Options) {
 		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
 	})
 	return tmClient
@@ -72,7 +73,7 @@ func GetSigner() *s3.PresignClient {
 	if signer != nil {
 		return signer
 	}
-	getS3Client()
+	GetS3Client()
 	return signer
 }
 
@@ -200,7 +201,7 @@ func UploadToS3(bucket, key, srcPath string, meta *map[string]string) error {
 
 // UpdateS3Meta updates the metadata of an existing S3 object.
 func UpdateS3Meta(bucket, key string, meta *map[string]string) error {
-	client := getS3Client()
+	client := GetS3Client()
 	_, err := client.CopyObject(context.Background(), &s3.CopyObjectInput{
 		Bucket:            &bucket,
 		Key:               &key,
@@ -220,7 +221,7 @@ func PutS3Tagging(bucket, key string, tagMap *map[string]string) error {
 			Value: aws.String(v),
 		})
 	}
-	client := getS3Client()
+	client := GetS3Client()
 	_, err := client.PutObjectTagging(context.Background(), &s3.PutObjectTaggingInput{
 		Bucket: &bucket,
 		Key:    &key,
@@ -290,4 +291,13 @@ func GetObjectAsBase64(ctx context.Context, bucket, key string) (string, error) 
 	encodedString := base64.StdEncoding.EncodeToString(data)
 
 	return encodedString, nil
+}
+
+func PutS3Object(ctx context.Context, bucket, key string, body []byte) (*s3.PutObjectOutput, error) {
+	client := GetS3Client()
+	return client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+		Body:   bytes.NewReader(body),
+	})
 }
