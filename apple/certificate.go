@@ -41,6 +41,13 @@ type TransactionPayload struct {
 	BundleID              string `json:"bundleId"`
 	ProductID             string `json:"productId"`
 	Environment           string `json:"environment"`
+	PurchaseDate          int64  `json:"purchaseDate"`
+	OriginalPurchaseDate  int64  `json:"originalPurchaseDate"`
+	ExpiresDate           int    `json:"expiresDate"`
+	Quantity              int    `json:"quantity"`
+	Type                  string `json:"type"`
+	InAppOwnershipType    string `json:"inAppOwnershipType"`
+	SignedDate            int64  `json:"signedDate"`
 	jwt.RegisteredClaims
 }
 
