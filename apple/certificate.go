@@ -48,6 +48,8 @@ type TransactionPayload struct {
 	Type                  string `json:"type"`
 	InAppOwnershipType    string `json:"inAppOwnershipType"`
 	SignedDate            int64  `json:"signedDate"`
+	OfferType             int    `json:"offerType"` // 1 = Introductory (Trial)
+	OfferIdentifier       string `json:"offerIdentifier"`
 	jwt.RegisteredClaims
 }
 

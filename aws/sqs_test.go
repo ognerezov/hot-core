@@ -26,7 +26,7 @@ func TestSQSMessage(t *testing.T) {
 	t.Run("Successful send", func(t *testing.T) {
 		mockClient := &http.Client{
 			Transport: MockTransport(func(req *http.Request) (*http.Response, error) {
-				body := `{"MessageId":"msg-123","MD5OfMessageBody":"817648cf4463d7bf0d5059321a5241fa"}`
+				body := `{"MessageId":"msg-123","MD5OfMessageBody":"b9be93cac66c5c084a6c39e01ccf7d8d"}`
 				header := make(http.Header)
 				header.Set("Content-Type", "application/x-amz-json-1.0")
 				return &http.Response{
@@ -89,7 +89,7 @@ func TestQueue_Send(t *testing.T) {
 	mockClient := &http.Client{
 		Transport: MockTransport(func(req *http.Request) (*http.Response, error) {
 			// MD5 for {"payload":42,"provider":"","userId":""}
-			body := `{"MessageId":"queue-msg","MD5OfMessageBody":"5f4e9a98b31ab4bb5a37768080863f06"}`
+			body := `{"MessageId":"queue-msg","MD5OfMessageBody":"37b767a3a7e3020c7b420008cb9bbfe6"}`
 			header := make(http.Header)
 			header.Set("Content-Type", "application/x-amz-json-1.0")
 			return &http.Response{
@@ -108,7 +108,7 @@ func TestQueue_Send(t *testing.T) {
 
 	q := NewQueue[int]("https://sqs.us-east-1.amazonaws.com/123/my-queue")
 	msg := UserMessage[int]{Payload: 42}
-	output, err := q.Send(msg)
+	output, err := q.SendUserMessage(msg)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, output)
