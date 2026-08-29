@@ -38,6 +38,17 @@ func SetSmClient(client *secretsmanager.Client) {
 	smClient = client
 }
 
+// SetSmClientInRegion sets a custom Secrets Manager client for the specified region. Useful for testing.
+func SetSmClientInRegion(region string, client *secretsmanager.Client) {
+	if region == "" {
+		SetSmClient(client)
+		return
+	}
+	smClientsMu.Lock()
+	defer smClientsMu.Unlock()
+	smClientsMap[region] = client
+}
+
 // GetSmClient returns a singleton Secrets Manager client, initializing it if necessary.
 func GetSmClient() *secretsmanager.Client {
 	smClientsMu.Lock()

@@ -28,10 +28,15 @@ var SecretNames = []string{
 
 // PreProcess retrieves multiple secure parameters from AWS SSM and returns them as a map.
 func PreProcess(paramNames []string) (map[string]*string, error) {
+	return PreProcessInRegion("", paramNames)
+}
+
+// PreProcessInRegion retrieves multiple secure parameters from AWS SSM in the specified region.
+func PreProcessInRegion(region string, paramNames []string) (map[string]*string, error) {
 	res := make(map[string]*string)
 
 	for _, name := range paramNames {
-		val, err := aws.GetSecureParameter(name)
+		val, err := aws.GetSecureParameterInRegion(region, name)
 		if err != nil {
 			return nil, err
 		}
@@ -39,4 +44,25 @@ func PreProcess(paramNames []string) (map[string]*string, error) {
 	}
 
 	return res, nil
+}
+
+// PreProcessInRegions retrieves multiple secure parameters from AWS SSM across multiple regions
+// and returns a map where keys are regions and values are maps of parameter names to parameter values.
+func PreProcessInRegions(regions []string, paramNames []string) (map[string]map[string]*string, error) {
+	res := make(map[string]map[string]*string)
+
+	for _, region := range regions {
+		params, err := PreProcessInRegion(region, paramNames)
+		if err != nil {
+			return nil, err
+		}
+		res[region] = params
+	}
+
+	return res, nil
+}
+
+// PreProcessRegions is an alias for PreProcessInRegions.
+func PreProcessRegions(regions []string, paramNames []string) (map[string]map[string]*string, error) {
+	return PreProcessInRegions(regions, paramNames)
 }

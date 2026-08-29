@@ -27,6 +27,17 @@ func SetSsmClient(client *ssm.Client) {
 	ssmClient = client
 }
 
+// SetSsmClientInRegion sets a custom SSM client for the specified region. Useful for testing.
+func SetSsmClientInRegion(region string, client *ssm.Client) {
+	if region == "" {
+		SetSsmClient(client)
+		return
+	}
+	ssmClientsMu.Lock()
+	defer ssmClientsMu.Unlock()
+	ssmClientsMap[region] = client
+}
+
 // GetSsmClient returns a singleton SSM client, initializing it if necessary.
 func GetSsmClient() *ssm.Client {
 	ssmClientsMu.Lock()
