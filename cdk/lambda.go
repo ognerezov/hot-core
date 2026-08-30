@@ -1,6 +1,11 @@
 package cdk
 
 import (
+	"fmt"
+	"strings"
+	"sync"
+	"unicode"
+
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsec2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
@@ -11,8 +16,10 @@ import (
 )
 
 var (
-	UserLambdaExecutionRole *awsiam.Role
-	PoolAccessRole          *awsiam.Role
+	userLambdaExecutionRolesMu sync.RWMutex
+	userLambdaExecutionRoles   = make(map[string]*awsiam.Role)
+	UserLambdaExecutionRole    *awsiam.Role
+	PoolAccessRole             *awsiam.Role
 )
 
 // getArchitecture maps string architecture names to awslambda.Architecture types.
@@ -41,7 +48,7 @@ func NewLambdaBuilder(stack constructs.Construct, projectName string, arch strin
 		projectName:    projectName,
 		architecture:   arch,
 		timeoutSeconds: 30,
-		role:           *GetLambdaExecutionRole(stack),
+		role:           *GetLambdaExecutionRole(stack, projectName),
 	}
 }
 
@@ -102,10 +109,29 @@ func (b *LambdaBuilder) Build(functionName string, fileName string) awslambda.Fu
 	return awslambda.NewFunction(b.stack, jsii.String(functionName), props)
 }
 
+// toPascalCase converts a hyphen, underscore, or space separated string into PascalCase (UpperCamelCase).
+func toPascalCase(s string) string {
+	var parts []string
+	for _, p := range strings.FieldsFunc(s, func(r rune) bool {
+		return r == '-' || r == '_' || r == ' '
+	}) {
+		if len(p) > 0 {
+			r := []rune(p)
+			r[0] = unicode.ToUpper(r[0])
+			parts = append(parts, string(r))
+		}
+	}
+	return strings.Join(parts, "")
+}
+
 // getLambdaExecutionRole creates the default execution role for Lambda functions.
-func getLambdaExecutionRole(stack constructs.Construct) *awsiam.Role {
-	lambdaRole := awsiam.NewRole(stack, jsii.String("UserLambdaExecutionRole"), &awsiam.RoleProps{
-		RoleName:    jsii.String("UserLambdaExecutionRole"),
+func getLambdaExecutionRole(stack constructs.Construct, projectName string) *awsiam.Role {
+	roleName := "UserLambdaExecutionRole"
+	if projectName != "" {
+		roleName = fmt.Sprintf("%sUserLambdaExecutionRole", toPascalCase(projectName))
+	}
+	lambdaRole := awsiam.NewRole(stack, jsii.String(roleName), &awsiam.RoleProps{
+		RoleName:    jsii.String(roleName),
 		AssumedBy:   awsiam.NewServicePrincipal(jsii.String("lambda.amazonaws.com"), nil),
 		Description: jsii.String("Hot Core execution role for Lambda functions"),
 	})
@@ -115,14 +141,24 @@ func getLambdaExecutionRole(stack constructs.Construct) *awsiam.Role {
 	return &lambdaRole
 }
 
-// GetLambdaExecutionRole returns the singleton UserLambdaExecutionRole, creating it if necessary.
-func GetLambdaExecutionRole(stack constructs.Construct) *awsiam.Role {
-	if UserLambdaExecutionRole != nil {
-		return UserLambdaExecutionRole
+// GetLambdaExecutionRole returns the singleton UserLambdaExecutionRole (or project-specific execution role), creating it if necessary.
+func GetLambdaExecutionRole(stack constructs.Construct, projectName ...string) *awsiam.Role {
+	proj := ""
+	if len(projectName) > 0 {
+		proj = projectName[0]
 	}
 
-	UserLambdaExecutionRole = getLambdaExecutionRole(stack)
-	return UserLambdaExecutionRole
+	userLambdaExecutionRolesMu.Lock()
+	defer userLambdaExecutionRolesMu.Unlock()
+
+	if role, exists := userLambdaExecutionRoles[proj]; exists && role != nil {
+		return role
+	}
+
+	role := getLambdaExecutionRole(stack, proj)
+	userLambdaExecutionRoles[proj] = role
+	UserLambdaExecutionRole = role
+	return role
 }
 
 // getLambdaPoolRole creates the execution role with cognito pool access for Lambda functions.
