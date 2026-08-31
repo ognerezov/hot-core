@@ -21,6 +21,7 @@ type AppInfo struct {
 	AppSyncUrl            string            `json:"app_sync_url"`
 	AppSyncAuthType       string            `json:"app_sync_auth_type"`
 	UserPoolId            string            `json:"user_pool_id"`
+	IdentityPoolId        string            `json:"identity_pool_id"`
 	Apis                  map[string]string `json:"apis,omitzero"`
 }
 
@@ -41,6 +42,7 @@ func InfoHandler(_ context.Context, _ events.APIGatewayV2HTTPRequest) (events.AP
 		AppSyncUrl:            os.Getenv("APPSYNC_URL"),
 		AppSyncAuthType:       "AMAZON_COGNITO_USER_POOLS",
 		UserPoolId:            os.Getenv("USER_POOL_ID"),
+		IdentityPoolId:        os.Getenv("IDENTITY_POOL_ID"),
 		Apis:                  make(map[string]string),
 	}
 
