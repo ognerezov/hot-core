@@ -23,15 +23,25 @@ func StringToJson(msg string, field string) string {
 
 func ErrorResponse(err error, code int) (events.APIGatewayV2HTTPResponse, error) {
 	log.Info().Msg(err.Error())
-	return events.APIGatewayV2HTTPResponse{
+	return WithJsonContentType(events.APIGatewayV2HTTPResponse{
 		StatusCode: code,
 		Body:       StringToJson(err.Error(), "error"),
-	}, err
+	}, err)
 }
 
 func JsonResponse(data any, code int) (events.APIGatewayV2HTTPResponse, error) {
-	return events.APIGatewayV2HTTPResponse{
+	return WithJsonContentType(events.APIGatewayV2HTTPResponse{
 		StatusCode: code,
 		Body:       ToString(data),
-	}, nil
+	}, nil)
+}
+
+func WithJsonContentType(res events.APIGatewayV2HTTPResponse, err error) (events.APIGatewayV2HTTPResponse, error) {
+	headers := res.Headers
+	if headers == nil {
+		headers = map[string]string{}
+	}
+	headers["Content-Type"] = "application/json; charset=utf-8"
+	res.Headers = headers
+	return res, err
 }
