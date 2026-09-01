@@ -48,6 +48,7 @@ type Router struct {
 	Domains              []string
 	AuthenticatedHandler LambdaHandler
 	InfoHandler          LambdaHandler
+	notFoundHandler      LambdaHandler
 }
 
 func NewRouter(domains []string, authHandler LambdaHandler) *Router {
@@ -55,7 +56,19 @@ func NewRouter(domains []string, authHandler LambdaHandler) *Router {
 		Handlers:             make(map[string]LambdaHandler),
 		Domains:              domains,
 		AuthenticatedHandler: authHandler,
+		notFoundHandler:      NotFoundHandler,
 	}
+}
+
+func (r *Router) SetNotFoundHandler(handler LambdaHandler) {
+	r.notFoundHandler = handler
+}
+
+func (r *Router) GetNotFoundHandler() LambdaHandler {
+	if r.notFoundHandler != nil {
+		return r.notFoundHandler
+	}
+	return NotFoundHandler
 }
 
 func (r *Router) RegisterHandler(regex string, handler LambdaHandler) {
@@ -98,15 +111,8 @@ func (r *Router) GetHandler(ctx context.Context, req events.APIGatewayV2HTTPRequ
 	var handler LambdaHandler
 	h := r.MatchingHandler(req.RawPath)
 	if h == nil {
-		if r.InfoHandler != nil {
-			log.Error().Msg("No handler for path fall back to info")
-			handler = r.InfoHandler
-		} else {
-			log.Error().Msg("No handler for path and no info handler")
-			handler = func(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-				return ErrorResponse(fmt.Errorf("not found"), 404)
-			}
-		}
+		log.Error().Msg("No handler for path and no info handler")
+		handler = r.GetNotFoundHandler()
 	} else {
 		log.Info().Str("path", req.RawPath).Msg("Found handler")
 		handler = *h

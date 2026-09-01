@@ -155,6 +155,19 @@ func TestRouter_GetHandler(t *testing.T) {
 		assert.Equal(t, 404, resp.StatusCode)
 		assert.Error(t, err)
 	})
+
+	t.Run("Public route with custom not found handler", func(t *testing.T) {
+		rCustom := NewRouter([]string{"*"}, nil)
+		rCustom.SetNotFoundHandler(func(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+			return events.APIGatewayV2HTTPResponse{StatusCode: 404, Body: "custom not found"}, nil
+		})
+		req := events.APIGatewayV2HTTPRequest{RawPath: "/pub/not-found"}
+		h := rCustom.GetHandler(context.Background(), req)
+		resp, err := h(context.Background(), req)
+		assert.NoError(t, err)
+		assert.Equal(t, 404, resp.StatusCode)
+		assert.Equal(t, "custom not found", resp.Body)
+	})
 }
 
 func TestRouter_WithCorsHeaders(t *testing.T) {
