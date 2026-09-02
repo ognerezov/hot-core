@@ -148,5 +148,10 @@ func (r *Router) ApiHandler(ctx context.Context, req events.APIGatewayV2HTTPRequ
 }
 
 func (r *Router) Start() {
+	if r.InfoHandler != nil {
+		r.RegisterResource("^/pub/info[/]?$", MethodRouter{
+			Get: InfoHandler,
+		})
+	}
 	lambda.Start(r.ApiHandler)
 }

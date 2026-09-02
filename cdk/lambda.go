@@ -39,6 +39,7 @@ type LambdaBuilder struct {
 	role           awsiam.IRole
 	env            *map[string]*string
 	timeoutSeconds int
+	policies       []awsiam.PolicyStatement
 }
 
 // NewLambdaBuilder initializes a new LambdaBuilder with mandatory project name and architecture.
@@ -72,7 +73,40 @@ func (b *LambdaBuilder) WithVpc(vpc awsec2.IVpc) *LambdaBuilder {
 // WithRole sets a custom execution role for the Lambda function.
 func (b *LambdaBuilder) WithRole(role awsiam.IRole) *LambdaBuilder {
 	b.role = role
+	if b.role != nil {
+		for _, stmt := range b.policies {
+			b.role.AddToPrincipalPolicy(stmt)
+		}
+	}
 	return b
+}
+
+// WithPolicy adds IAM policy statements to the Lambda function's execution role.
+func (b *LambdaBuilder) WithPolicy(statements ...awsiam.PolicyStatement) *LambdaBuilder {
+	for _, stmt := range statements {
+		if stmt != nil {
+			if b.role != nil {
+				b.role.AddToPrincipalPolicy(stmt)
+			}
+			b.policies = append(b.policies, stmt)
+		}
+	}
+	return b
+}
+
+// WithPolicies adds multiple IAM policy statements to the Lambda function's execution role.
+func (b *LambdaBuilder) WithPolicies(statements ...awsiam.PolicyStatement) *LambdaBuilder {
+	return b.WithPolicy(statements...)
+}
+
+// WithPolicyStatement adds IAM policy statements to the Lambda function's execution role.
+func (b *LambdaBuilder) WithPolicyStatement(statements ...awsiam.PolicyStatement) *LambdaBuilder {
+	return b.WithPolicy(statements...)
+}
+
+// AddToRolePolicy adds a single IAM policy statement to the Lambda function's execution role.
+func (b *LambdaBuilder) AddToRolePolicy(statement awsiam.PolicyStatement) *LambdaBuilder {
+	return b.WithPolicy(statement)
 }
 
 // WithEnv sets the environment variables for the Lambda function.
