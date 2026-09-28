@@ -119,3 +119,62 @@ func PutParameterInRegion(region string, name string, value string) error {
 	console.MagentaPrintln(fmt.Sprintf("Uploaded parameter to region %s", client.Options().Region))
 	return err
 }
+
+// CopyParameterInRegion copies a parameter from srcRegion to dstRegion.
+// If dstName is empty, it uses srcName in the destination region.
+func CopyParameterInRegion(srcRegion, dstRegion, srcName, dstName string) error {
+	if dstName == "" {
+		dstName = srcName
+	}
+
+	// Если регионы совпадают, копирование не требуется
+	if srcRegion == dstRegion {
+		return nil
+	}
+
+	// 1. Получаем параметр из исходного региона (с расшифровкой, если это SecureString)
+	srcClient := GetSsmClientInRegion(srcRegion)
+	out, err := srcClient.GetParameter(context.Background(), &ssm.GetParameterInput{
+		Name:           aws.String(srcName),
+		WithDecryption: aws.Bool(true),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get parameter '%s' from region %s: %w", srcName, srcRegion, err)
+	}
+
+	if out.Parameter == nil {
+		return fmt.Errorf("parameter '%s' not found in region %s", srcName, srcRegion)
+	}
+
+	param := out.Parameter
+
+	// 2. Записываем параметр в целевой регион с сохранением типа
+	dstClient := GetSsmClientInRegion(dstRegion)
+	input := &ssm.PutParameterInput{
+		Name:      aws.String(dstName),
+		Value:     param.Value,
+		Type:      param.Type, // Сохраняем SecureString / String / StringList
+		Overwrite: aws.Bool(true),
+	}
+	if param.DataType != nil {
+		input.DataType = param.DataType
+	}
+
+	_, err = dstClient.PutParameter(context.Background(), input)
+	if err != nil {
+		return fmt.Errorf("failed to put parameter '%s' to region %s: %w", dstName, dstRegion, err)
+	}
+
+	console.MagentaPrintln(fmt.Sprintf("Successfully copied parameter '%s' from %s to %s", srcName, srcRegion, dstRegion))
+	return nil
+}
+
+// CopyParametersInRegion copies a slice of parameter names from srcRegion to dstRegion.
+func CopyParametersInRegion(srcRegion, dstRegion string, names []string) error {
+	for _, name := range names {
+		if err := CopyParameterInRegion(srcRegion, dstRegion, name, name); err != nil {
+			return err
+		}
+	}
+	return nil
+}

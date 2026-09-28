@@ -2,6 +2,8 @@
 package process
 
 import (
+	"fmt"
+
 	"github.com/ognerezov/hot-core/aws"
 )
 
@@ -65,4 +67,32 @@ func PreProcessInRegions(regions []string, paramNames []string) (map[string]map[
 // PreProcessRegions is an alias for PreProcessInRegions.
 func PreProcessRegions(regions []string, paramNames []string) (map[string]map[string]*string, error) {
 	return PreProcessInRegions(regions, paramNames)
+}
+
+// CopyInRegion copies a specified slice of parameters from srcRegion to dstRegion.
+func CopyInRegion(srcRegion, dstRegion string, paramNames []string) error {
+	if srcRegion == dstRegion {
+		return nil
+	}
+	return aws.CopyParametersInRegion(srcRegion, dstRegion, paramNames)
+}
+
+// CopySecretNamesInRegion copies the default SecretNames list from srcRegion to dstRegion.
+func CopySecretNamesInRegion(srcRegion, dstRegion string) error {
+	return CopyInRegion(srcRegion, dstRegion, SecretNames)
+}
+
+// CopyInRegions copies a specified slice of parameters from srcRegion to multiple dstRegions.
+func CopyInRegions(srcRegion string, dstRegions []string, paramNames []string) error {
+	for _, dstRegion := range dstRegions {
+		if err := CopyInRegion(srcRegion, dstRegion, paramNames); err != nil {
+			return fmt.Errorf("failed to sync params to region %s: %w", dstRegion, err)
+		}
+	}
+	return nil
+}
+
+// CopySecretNamesInRegions copies default SecretNames from srcRegion to multiple dstRegions.
+func CopySecretNamesInRegions(srcRegion string, dstRegions []string) error {
+	return CopyInRegions(srcRegion, dstRegions, SecretNames)
 }
