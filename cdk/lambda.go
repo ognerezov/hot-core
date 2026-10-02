@@ -19,8 +19,57 @@ var (
 	userLambdaExecutionRolesMu sync.RWMutex
 	userLambdaExecutionRoles   = make(map[string]*awsiam.Role)
 	UserLambdaExecutionRole    *awsiam.Role
+	userLambdaPoolRolesMu      sync.RWMutex
+	userLambdaPoolRoles        = make(map[string]*awsiam.Role)
 	PoolAccessRole             *awsiam.Role
+	projectNameMu              sync.RWMutex
+	globalProjectName          string
+	ProjectName                string
 )
+
+// ResetGlobals resets the cached roles and global project name (useful for testing).
+func ResetGlobals() {
+	projectNameMu.Lock()
+	globalProjectName = ""
+	ProjectName = ""
+	projectNameMu.Unlock()
+
+	userLambdaExecutionRolesMu.Lock()
+	userLambdaExecutionRoles = make(map[string]*awsiam.Role)
+	UserLambdaExecutionRole = nil
+	userLambdaExecutionRolesMu.Unlock()
+
+	userLambdaPoolRolesMu.Lock()
+	userLambdaPoolRoles = make(map[string]*awsiam.Role)
+	PoolAccessRole = nil
+	userLambdaPoolRolesMu.Unlock()
+}
+
+func validateOrSetProjectName(proj string) string {
+	projectNameMu.Lock()
+	defer projectNameMu.Unlock()
+
+	current := globalProjectName
+	if current == "" && ProjectName != "" {
+		current = ProjectName
+		globalProjectName = ProjectName
+	}
+
+	if proj == "" {
+		return current
+	}
+
+	if current == "" {
+		globalProjectName = proj
+		ProjectName = proj
+		return proj
+	}
+
+	if current != proj {
+		panic(fmt.Sprintf("projectName mismatch: expected %s, got %s", current, proj))
+	}
+	return current
+}
 
 // getArchitecture maps string architecture names to awslambda.Architecture types.
 func getArchitecture(arch string) awslambda.Architecture {
@@ -44,23 +93,25 @@ type LambdaBuilder struct {
 
 // NewLambdaBuilder initializes a new LambdaBuilder with mandatory project name and architecture.
 func NewLambdaBuilder(stack constructs.Construct, projectName string, arch string) *LambdaBuilder {
+	proj := validateOrSetProjectName(projectName)
 	return &LambdaBuilder{
 		stack:          stack,
-		projectName:    projectName,
+		projectName:    proj,
 		architecture:   arch,
 		timeoutSeconds: 30,
-		role:           *GetLambdaExecutionRole(stack, projectName),
+		role:           *GetLambdaExecutionRole(stack, proj),
 	}
 }
 
 // NewPollLambdaBuilder initializes a new LambdaBuilder with mandatory project name and architecture.
 func NewPollLambdaBuilder(stack constructs.Construct, projectName string, arch string, arn string) *LambdaBuilder {
+	proj := validateOrSetProjectName(projectName)
 	return &LambdaBuilder{
 		stack:          stack,
-		projectName:    projectName,
+		projectName:    proj,
 		architecture:   arch,
 		timeoutSeconds: 30,
-		role:           *GetLambdaPoolRole(stack, arn),
+		role:           *GetLambdaPoolRole(stack, arn, proj),
 	}
 }
 
@@ -160,9 +211,9 @@ func toPascalCase(s string) string {
 
 // getLambdaExecutionRole creates the default execution role for Lambda functions.
 func getLambdaExecutionRole(stack constructs.Construct, projectName string) *awsiam.Role {
-	roleName := "UserLambdaExecutionRole"
+	roleName := fmt.Sprintf("UserLambdaExecutionRole%s", toPascalCase(*awscdk.Stack_Of(stack).Region()))
 	if projectName != "" {
-		roleName = fmt.Sprintf("%sUserLambdaExecutionRole", toPascalCase(projectName))
+		roleName = fmt.Sprintf("%sUserLambdaExecutionRole%s", toPascalCase(projectName), toPascalCase(*awscdk.Stack_Of(stack).Region()))
 	}
 	lambdaRole := awsiam.NewRole(stack, jsii.String(roleName), &awsiam.RoleProps{
 		RoleName:    jsii.String(roleName),
@@ -181,23 +232,30 @@ func GetLambdaExecutionRole(stack constructs.Construct, projectName ...string) *
 	if len(projectName) > 0 {
 		proj = projectName[0]
 	}
+	proj = validateOrSetProjectName(proj)
+
+	stackName := *awscdk.Stack_Of(stack).StackName()
+	key := stackName
 
 	userLambdaExecutionRolesMu.Lock()
 	defer userLambdaExecutionRolesMu.Unlock()
 
-	if role, exists := userLambdaExecutionRoles[proj]; exists && role != nil {
+	if role, exists := userLambdaExecutionRoles[key]; exists && role != nil {
 		return role
 	}
 
 	role := getLambdaExecutionRole(stack, proj)
-	userLambdaExecutionRoles[proj] = role
+	userLambdaExecutionRoles[key] = role
 	UserLambdaExecutionRole = role
 	return role
 }
 
 // getLambdaPoolRole creates the execution role with cognito pool access for Lambda functions.
-func getLambdaPoolRole(stack constructs.Construct, arn string) *awsiam.Role {
-	roleName := "pool-access-lambda-role"
+func getLambdaPoolRole(stack constructs.Construct, arn string, projectName string) *awsiam.Role {
+	roleName := fmt.Sprintf("PoolAccessLambdaRole%s", toPascalCase(*awscdk.Stack_Of(stack).Region()))
+	if projectName != "" {
+		roleName = fmt.Sprintf("%sPoolAccessLambdaRole%s", toPascalCase(projectName), toPascalCase(*awscdk.Stack_Of(stack).Region()))
+	}
 	lambdaRole := awsiam.NewRole(stack, jsii.String(roleName), &awsiam.RoleProps{
 		RoleName:    jsii.String(roleName),
 		AssumedBy:   awsiam.NewServicePrincipal(jsii.String("lambda.amazonaws.com"), nil),
@@ -218,11 +276,21 @@ func getLambdaPoolRole(stack constructs.Construct, arn string) *awsiam.Role {
 }
 
 // GetLambdaPoolRole returns the singleton PoolAccessRole, creating it if necessary.
-func GetLambdaPoolRole(stack constructs.Construct, arn string) *awsiam.Role {
-	if PoolAccessRole != nil {
-		return PoolAccessRole
+func GetLambdaPoolRole(stack constructs.Construct, arn string, projectName string) *awsiam.Role {
+	proj := validateOrSetProjectName(projectName)
+
+	stackName := *awscdk.Stack_Of(stack).StackName()
+	key := fmt.Sprintf("%s:%s", stackName, arn)
+
+	userLambdaPoolRolesMu.Lock()
+	defer userLambdaPoolRolesMu.Unlock()
+
+	if role, exists := userLambdaPoolRoles[key]; exists && role != nil {
+		return role
 	}
 
-	PoolAccessRole = getLambdaPoolRole(stack, arn)
-	return PoolAccessRole
+	role := getLambdaPoolRole(stack, arn, proj)
+	userLambdaPoolRoles[key] = role
+	PoolAccessRole = role
+	return role
 }

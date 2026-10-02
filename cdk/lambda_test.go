@@ -1,6 +1,7 @@
 package cdk
 
 import (
+	"os"
 	"testing"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
@@ -11,34 +12,55 @@ import (
 )
 
 func TestGetLambdaExecutionRole_WithProjectName(t *testing.T) {
+	ResetGlobals()
+	defer ResetGlobals()
+
 	app := awscdk.NewApp(nil)
-	stack := awscdk.NewStack(app, jsii.String("TestStackWithProject"), nil)
+	stack := awscdk.NewStack(app, jsii.String("TestStackWithProject"), &awscdk.StackProps{
+		Env: &awscdk.Environment{
+			Region: jsii.String("us-east-1"),
+		},
+	})
 
 	role := GetLambdaExecutionRole(stack, "auth-service")
 	assert.NotNil(t, role)
 
 	template := assertions.Template_FromStack(stack, nil)
 	template.HasResourceProperties(jsii.String("AWS::IAM::Role"), map[string]any{
-		"RoleName": "AuthServiceUserLambdaExecutionRole",
+		"RoleName": "AuthServiceUserLambdaExecutionRoleUsEast1",
 	})
 }
 
 func TestGetLambdaExecutionRole_Default(t *testing.T) {
+	ResetGlobals()
+	defer ResetGlobals()
+
 	app := awscdk.NewApp(nil)
-	stack := awscdk.NewStack(app, jsii.String("TestStackDefault"), nil)
+	stack := awscdk.NewStack(app, jsii.String("TestStackDefault"), &awscdk.StackProps{
+		Env: &awscdk.Environment{
+			Region: jsii.String("us-east-1"),
+		},
+	})
 
 	role := GetLambdaExecutionRole(stack)
 	assert.NotNil(t, role)
 
 	template := assertions.Template_FromStack(stack, nil)
 	template.HasResourceProperties(jsii.String("AWS::IAM::Role"), map[string]any{
-		"RoleName": "UserLambdaExecutionRole",
+		"RoleName": "UserLambdaExecutionRoleUsEast1",
 	})
 }
 
 func TestNewLambdaBuilder_RoleName(t *testing.T) {
+	ResetGlobals()
+	defer ResetGlobals()
+
 	app := awscdk.NewApp(nil)
-	stack := awscdk.NewStack(app, jsii.String("TestStackBuilder"), nil)
+	stack := awscdk.NewStack(app, jsii.String("TestStackBuilder"), &awscdk.StackProps{
+		Env: &awscdk.Environment{
+			Region: jsii.String("us-east-1"),
+		},
+	})
 
 	builder := NewLambdaBuilder(stack, "billing-service", "arm64")
 	assert.NotNil(t, builder)
@@ -46,7 +68,27 @@ func TestNewLambdaBuilder_RoleName(t *testing.T) {
 
 	template := assertions.Template_FromStack(stack, nil)
 	template.HasResourceProperties(jsii.String("AWS::IAM::Role"), map[string]any{
-		"RoleName": "BillingServiceUserLambdaExecutionRole",
+		"RoleName": "BillingServiceUserLambdaExecutionRoleUsEast1",
+	})
+}
+
+func TestGetLambdaPoolRole(t *testing.T) {
+	ResetGlobals()
+	defer ResetGlobals()
+
+	app := awscdk.NewApp(nil)
+	stack := awscdk.NewStack(app, jsii.String("TestStackPoolRole"), &awscdk.StackProps{
+		Env: &awscdk.Environment{
+			Region: jsii.String("us-east-1"),
+		},
+	})
+
+	role := GetLambdaPoolRole(stack, "arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_abc123", "social-app")
+	assert.NotNil(t, role)
+
+	template := assertions.Template_FromStack(stack, nil)
+	template.HasResourceProperties(jsii.String("AWS::IAM::Role"), map[string]any{
+		"RoleName": "SocialAppPoolAccessLambdaRoleUsEast1",
 	})
 }
 
@@ -55,12 +97,48 @@ func TestToPascalCase(t *testing.T) {
 	assert.Equal(t, "BillingService", toPascalCase("billing_service"))
 	assert.Equal(t, "MyProject", toPascalCase("myProject"))
 	assert.Equal(t, "Auth", toPascalCase("auth"))
+	assert.Equal(t, "UsEast1", toPascalCase("us-east-1"))
+	assert.Equal(t, "EuWest1", toPascalCase("eu-west-1"))
+	assert.Equal(t, "ApNortheast2", toPascalCase("ap-northeast-2"))
 	assert.Equal(t, "", toPascalCase(""))
 }
 
-func TestLambdaBuilder_WithPolicy(t *testing.T) {
+func TestLambdaBuilder_Build(t *testing.T) {
+	ResetGlobals()
+	defer ResetGlobals()
+
 	app := awscdk.NewApp(nil)
-	stack := awscdk.NewStack(app, jsii.String("TestStackWithPolicy"), nil)
+	stack := awscdk.NewStack(app, jsii.String("TestStackLambdaBuild"), &awscdk.StackProps{
+		Env: &awscdk.Environment{
+			Region: jsii.String("us-east-1"),
+		},
+	})
+
+	dummyFile := "dummy_test_handler"
+	err := os.WriteFile(dummyFile+".go", []byte("package main\n\nfunc main() {}\n"), 0644)
+	assert.NoError(t, err)
+	defer os.Remove(dummyFile + ".go")
+
+	builder := NewLambdaBuilder(stack, "auth-service", "arm64")
+	fn := builder.Build("login-handler", dummyFile)
+	assert.NotNil(t, fn)
+
+	template := assertions.Template_FromStack(stack, nil)
+	template.HasResourceProperties(jsii.String("AWS::Lambda::Function"), map[string]any{
+		"FunctionName": "AuthServiceLoginHandlerUsEast1",
+	})
+}
+
+func TestLambdaBuilder_WithPolicy(t *testing.T) {
+	ResetGlobals()
+	defer ResetGlobals()
+
+	app := awscdk.NewApp(nil)
+	stack := awscdk.NewStack(app, jsii.String("TestStackWithPolicy"), &awscdk.StackProps{
+		Env: &awscdk.Environment{
+			Region: jsii.String("us-east-1"),
+		},
+	})
 
 	policyStmt := awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Effect:    awsiam.Effect_ALLOW,
@@ -88,8 +166,15 @@ func TestLambdaBuilder_WithPolicy(t *testing.T) {
 }
 
 func TestLambdaBuilder_WithPolicyStatement_And_WithPolicies(t *testing.T) {
+	ResetGlobals()
+	defer ResetGlobals()
+
 	app := awscdk.NewApp(nil)
-	stack := awscdk.NewStack(app, jsii.String("TestStackWithMultiplePolicies"), nil)
+	stack := awscdk.NewStack(app, jsii.String("TestStackWithMultiplePolicies"), &awscdk.StackProps{
+		Env: &awscdk.Environment{
+			Region: jsii.String("us-east-1"),
+		},
+	})
 
 	stmt1 := awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Effect:    awsiam.Effect_ALLOW,
@@ -128,8 +213,15 @@ func TestLambdaBuilder_WithPolicyStatement_And_WithPolicies(t *testing.T) {
 }
 
 func TestLambdaBuilder_WithRoleAndPolicies(t *testing.T) {
+	ResetGlobals()
+	defer ResetGlobals()
+
 	app := awscdk.NewApp(nil)
-	stack := awscdk.NewStack(app, jsii.String("TestStackCustomRole"), nil)
+	stack := awscdk.NewStack(app, jsii.String("TestStackCustomRole"), &awscdk.StackProps{
+		Env: &awscdk.Environment{
+			Region: jsii.String("us-east-1"),
+		},
+	})
 
 	customRole := awsiam.NewRole(stack, jsii.String("CustomRole"), &awsiam.RoleProps{
 		AssumedBy: awsiam.NewServicePrincipal(jsii.String("lambda.amazonaws.com"), nil),
@@ -158,5 +250,57 @@ func TestLambdaBuilder_WithRoleAndPolicies(t *testing.T) {
 				},
 			},
 		},
+	})
+}
+
+func TestProjectName_MismatchPanic(t *testing.T) {
+	ResetGlobals()
+	defer ResetGlobals()
+
+	app := awscdk.NewApp(nil)
+	stack := awscdk.NewStack(app, jsii.String("TestStackMismatch1"), &awscdk.StackProps{
+		Env: &awscdk.Environment{
+			Region: jsii.String("us-east-1"),
+		},
+	})
+
+	GetLambdaExecutionRole(stack, "first-project")
+
+	assert.Panics(t, func() {
+		GetLambdaExecutionRole(stack, "second-project")
+	})
+}
+
+func TestGetLambdaExecutionRole_MultipleStacks(t *testing.T) {
+	ResetGlobals()
+	defer ResetGlobals()
+
+	app := awscdk.NewApp(nil)
+	stack1 := awscdk.NewStack(app, jsii.String("StackOne"), &awscdk.StackProps{
+		Env: &awscdk.Environment{
+			Region: jsii.String("us-east-1"),
+		},
+	})
+	stack2 := awscdk.NewStack(app, jsii.String("StackTwo"), &awscdk.StackProps{
+		Env: &awscdk.Environment{
+			Region: jsii.String("us-west-2"),
+		},
+	})
+
+	role1 := GetLambdaExecutionRole(stack1, "my-app")
+	role2 := GetLambdaExecutionRole(stack2, "my-app")
+
+	assert.NotNil(t, role1)
+	assert.NotNil(t, role2)
+	assert.NotSame(t, role1, role2)
+
+	template1 := assertions.Template_FromStack(stack1, nil)
+	template1.HasResourceProperties(jsii.String("AWS::IAM::Role"), map[string]any{
+		"RoleName": "MyAppUserLambdaExecutionRoleUsEast1",
+	})
+
+	template2 := assertions.Template_FromStack(stack2, nil)
+	template2.HasResourceProperties(jsii.String("AWS::IAM::Role"), map[string]any{
+		"RoleName": "MyAppUserLambdaExecutionRoleUsWest2",
 	})
 }
