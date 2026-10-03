@@ -109,12 +109,22 @@ func PutParameter(name string, value string) error {
 
 // PutParameterInRegion uploads a secure parameter to AWS SSM Parameter Store in the specified region.
 func PutParameterInRegion(region string, name string, value string) error {
+	return PutInRegion(region, name, value, types.ParameterTypeSecureString)
+}
+
+// PutStringInRegion uploads a secure parameter to AWS SSM Parameter Store in the specified region.
+func PutStringInRegion(region string, name string, value string) error {
+	return PutInRegion(region, name, value, types.ParameterTypeString)
+}
+
+// PutInRegion uploads a secure parameter to AWS SSM Parameter Store in the specified region.
+func PutInRegion(region string, name string, value string, t types.ParameterType) error {
 	client := GetSsmClientInRegion(region)
 	_, err := client.PutParameter(context.Background(), &ssm.PutParameterInput{
 		Name:      aws.String(name),
 		Value:     aws.String(value),
 		Overwrite: aws.Bool(true),
-		Type:      types.ParameterTypeSecureString,
+		Type:      t,
 	})
 	console.MagentaPrintln(fmt.Sprintf("Uploaded parameter to region %s", client.Options().Region))
 	return err
