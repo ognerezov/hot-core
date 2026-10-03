@@ -2,9 +2,7 @@ package cdk
 
 import (
 	"fmt"
-	"strings"
 	"sync"
-	"unicode"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsec2"
@@ -13,6 +11,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3assets"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
+	"github.com/ognerezov/hot-core/tools"
 )
 
 var (
@@ -99,7 +98,19 @@ func NewLambdaBuilder(stack constructs.Construct, projectName string, arch strin
 		projectName:    proj,
 		architecture:   arch,
 		timeoutSeconds: 30,
-		role:           *GetLambdaExecutionRole(stack, proj),
+		role:           ImportUniversalRole(stack),
+	}
+}
+
+// NewLambdaBuilderWithNewRole initializes a new LambdaBuilder with mandatory project name and architecture.
+func NewLambdaBuilderWithNewRole(stack constructs.Construct, projectName string, arch string) *LambdaBuilder {
+	proj := validateOrSetProjectName(projectName)
+	return &LambdaBuilder{
+		stack:          stack,
+		projectName:    proj,
+		architecture:   arch,
+		timeoutSeconds: 30,
+		role:           CreateNewRole(stack, fmt.Sprintf("%s-lambda", proj)),
 	}
 }
 
@@ -124,6 +135,17 @@ func (b *LambdaBuilder) WithVpc(vpc awsec2.IVpc) *LambdaBuilder {
 // WithRole sets a custom execution role for the Lambda function.
 func (b *LambdaBuilder) WithRole(role awsiam.IRole) *LambdaBuilder {
 	b.role = role
+	if b.role != nil {
+		for _, stmt := range b.policies {
+			b.role.AddToPrincipalPolicy(stmt)
+		}
+	}
+	return b
+}
+
+// WithNewRole sets a custom execution role for the Lambda function.
+func (b *LambdaBuilder) WithNewRole() *LambdaBuilder {
+	b.role = CreateNewRole(b.stack, fmt.Sprintf("%s-lambda", b.projectName))
 	if b.role != nil {
 		for _, stmt := range b.policies {
 			b.role.AddToPrincipalPolicy(stmt)
@@ -196,27 +218,16 @@ func (b *LambdaBuilder) Build(functionName string, fileName string) awslambda.Fu
 
 // toPascalCase converts a hyphen, underscore, or space separated string into PascalCase (UpperCamelCase).
 func toPascalCase(s string) string {
-	var parts []string
-	for _, p := range strings.FieldsFunc(s, func(r rune) bool {
-		return r == '-' || r == '_' || r == ' '
-	}) {
-		if len(p) > 0 {
-			r := []rune(p)
-			r[0] = unicode.ToUpper(r[0])
-			parts = append(parts, string(r))
-		}
-	}
-	return strings.Join(parts, "")
+	return tools.ToPascalCase(s)
 }
 
 // getLambdaExecutionRole creates the default execution role for Lambda functions.
 func getLambdaExecutionRole(stack constructs.Construct, projectName string) *awsiam.Role {
-	roleName := fmt.Sprintf("UserLambdaExecutionRole%s", toPascalCase(*awscdk.Stack_Of(stack).Region()))
+	roleName := fmt.Sprintf("UserLambdaExecutionRole%s", tools.ToPascalCase(*awscdk.Stack_Of(stack).Region()))
 	if projectName != "" {
-		roleName = fmt.Sprintf("%sUserLambdaExecutionRole%s", toPascalCase(projectName), toPascalCase(*awscdk.Stack_Of(stack).Region()))
+		roleName = fmt.Sprintf("%sUserLambdaExecutionRole%s", tools.ToPascalCase(projectName), tools.ToPascalCase(*awscdk.Stack_Of(stack).Region()))
 	}
 	lambdaRole := awsiam.NewRole(stack, jsii.String(roleName), &awsiam.RoleProps{
-		RoleName:    jsii.String(roleName),
 		AssumedBy:   awsiam.NewServicePrincipal(jsii.String("lambda.amazonaws.com"), nil),
 		Description: jsii.String("Hot Core execution role for Lambda functions"),
 	})
@@ -252,12 +263,11 @@ func GetLambdaExecutionRole(stack constructs.Construct, projectName ...string) *
 
 // getLambdaPoolRole creates the execution role with cognito pool access for Lambda functions.
 func getLambdaPoolRole(stack constructs.Construct, arn string, projectName string) *awsiam.Role {
-	roleName := fmt.Sprintf("PoolAccessLambdaRole%s", toPascalCase(*awscdk.Stack_Of(stack).Region()))
+	roleName := fmt.Sprintf("PoolAccessLambdaRole%s", tools.ToPascalCase(*awscdk.Stack_Of(stack).Region()))
 	if projectName != "" {
-		roleName = fmt.Sprintf("%sPoolAccessLambdaRole%s", toPascalCase(projectName), toPascalCase(*awscdk.Stack_Of(stack).Region()))
+		roleName = fmt.Sprintf("%sPoolAccessLambdaRole%s", tools.ToPascalCase(projectName), tools.ToPascalCase(*awscdk.Stack_Of(stack).Region()))
 	}
 	lambdaRole := awsiam.NewRole(stack, jsii.String(roleName), &awsiam.RoleProps{
-		RoleName:    jsii.String(roleName),
 		AssumedBy:   awsiam.NewServicePrincipal(jsii.String("lambda.amazonaws.com"), nil),
 		Description: jsii.String("Hot Core execution role for social app Lambda functions with Cognito pool access"),
 	})

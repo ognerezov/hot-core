@@ -2,6 +2,8 @@ package tools
 
 import (
 	"fmt"
+	"strings"
+	"unicode"
 
 	"github.com/aws/jsii-runtime-go"
 )
@@ -29,4 +31,19 @@ func FormatList(list []string, suffix string) *[]*string {
 		return jsii.String(t + suffix)
 	})
 	return &res
+}
+
+// ToPascalCase converts a hyphen, underscore, or space separated string into PascalCase (UpperCamelCase).
+func ToPascalCase(s string) string {
+	var parts []string
+	for _, p := range strings.FieldsFunc(s, func(r rune) bool {
+		return r == '-' || r == '_' || r == ' '
+	}) {
+		if len(p) > 0 {
+			r := []rune(p)
+			r[0] = unicode.ToUpper(r[0])
+			parts = append(parts, string(r))
+		}
+	}
+	return strings.Join(parts, "")
 }

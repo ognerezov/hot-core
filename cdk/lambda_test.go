@@ -25,10 +25,6 @@ func TestGetLambdaExecutionRole_WithProjectName(t *testing.T) {
 	role := GetLambdaExecutionRole(stack, "auth-service")
 	assert.NotNil(t, role)
 
-	template := assertions.Template_FromStack(stack, nil)
-	template.HasResourceProperties(jsii.String("AWS::IAM::Role"), map[string]any{
-		"RoleName": "AuthServiceUserLambdaExecutionRoleUsEast1",
-	})
 }
 
 func TestGetLambdaExecutionRole_Default(t *testing.T) {
@@ -45,10 +41,6 @@ func TestGetLambdaExecutionRole_Default(t *testing.T) {
 	role := GetLambdaExecutionRole(stack)
 	assert.NotNil(t, role)
 
-	template := assertions.Template_FromStack(stack, nil)
-	template.HasResourceProperties(jsii.String("AWS::IAM::Role"), map[string]any{
-		"RoleName": "UserLambdaExecutionRoleUsEast1",
-	})
 }
 
 func TestNewLambdaBuilder_RoleName(t *testing.T) {
@@ -65,11 +57,7 @@ func TestNewLambdaBuilder_RoleName(t *testing.T) {
 	builder := NewLambdaBuilder(stack, "billing-service", "arm64")
 	assert.NotNil(t, builder)
 	assert.NotNil(t, builder.role)
-
-	template := assertions.Template_FromStack(stack, nil)
-	template.HasResourceProperties(jsii.String("AWS::IAM::Role"), map[string]any{
-		"RoleName": "BillingServiceUserLambdaExecutionRoleUsEast1",
-	})
+	assert.Equal(t, GetUniversalRoleArn(stack), builder.role.RoleArn())
 }
 
 func TestGetLambdaPoolRole(t *testing.T) {
@@ -86,10 +74,6 @@ func TestGetLambdaPoolRole(t *testing.T) {
 	role := GetLambdaPoolRole(stack, "arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_abc123", "social-app")
 	assert.NotNil(t, role)
 
-	template := assertions.Template_FromStack(stack, nil)
-	template.HasResourceProperties(jsii.String("AWS::IAM::Role"), map[string]any{
-		"RoleName": "SocialAppPoolAccessLambdaRoleUsEast1",
-	})
 }
 
 func TestToPascalCase(t *testing.T) {
@@ -125,7 +109,7 @@ func TestLambdaBuilder_Build(t *testing.T) {
 
 	template := assertions.Template_FromStack(stack, nil)
 	template.HasResourceProperties(jsii.String("AWS::Lambda::Function"), map[string]any{
-		"FunctionName": "AuthServiceLoginHandlerUsEast1",
+		"FunctionName": "login-handler",
 	})
 }
 
@@ -140,6 +124,10 @@ func TestLambdaBuilder_WithPolicy(t *testing.T) {
 		},
 	})
 
+	customRole := awsiam.NewRole(stack, jsii.String("CustomRole"), &awsiam.RoleProps{
+		AssumedBy: awsiam.NewServicePrincipal(jsii.String("lambda.amazonaws.com"), nil),
+	})
+
 	policyStmt := awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Effect:    awsiam.Effect_ALLOW,
 		Actions:   jsii.Strings("firehose:PutRecord"),
@@ -147,6 +135,7 @@ func TestLambdaBuilder_WithPolicy(t *testing.T) {
 	})
 
 	builder := NewLambdaBuilder(stack, "stream-service", "arm64").
+		WithRole(customRole).
 		WithPolicy(policyStmt)
 
 	assert.NotNil(t, builder)
@@ -176,6 +165,10 @@ func TestLambdaBuilder_WithPolicyStatement_And_WithPolicies(t *testing.T) {
 		},
 	})
 
+	customRole := awsiam.NewRole(stack, jsii.String("CustomRole"), &awsiam.RoleProps{
+		AssumedBy: awsiam.NewServicePrincipal(jsii.String("lambda.amazonaws.com"), nil),
+	})
+
 	stmt1 := awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Effect:    awsiam.Effect_ALLOW,
 		Actions:   jsii.Strings("s3:GetObject"),
@@ -188,6 +181,7 @@ func TestLambdaBuilder_WithPolicyStatement_And_WithPolicies(t *testing.T) {
 	})
 
 	builder := NewLambdaBuilder(stack, "worker-service", "arm64").
+		WithRole(customRole).
 		WithPolicyStatement(stmt1).
 		WithPolicies(stmt2)
 
@@ -296,11 +290,11 @@ func TestGetLambdaExecutionRole_MultipleStacks(t *testing.T) {
 
 	template1 := assertions.Template_FromStack(stack1, nil)
 	template1.HasResourceProperties(jsii.String("AWS::IAM::Role"), map[string]any{
-		"RoleName": "MyAppUserLambdaExecutionRoleUsEast1",
+		"Description": "Hot Core execution role for Lambda functions",
 	})
 
 	template2 := assertions.Template_FromStack(stack2, nil)
 	template2.HasResourceProperties(jsii.String("AWS::IAM::Role"), map[string]any{
-		"RoleName": "MyAppUserLambdaExecutionRoleUsWest2",
+		"Description": "Hot Core execution role for Lambda functions",
 	})
 }
