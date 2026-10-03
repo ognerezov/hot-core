@@ -15,6 +15,9 @@ const (
 	AppleClientId        = "apple_client_id"
 	AppleKeyId           = "apple_key_id"
 	AppleTeamId          = "apple_team_id"
+
+	RegionalBillingApiUrlParam = "regional_billing_api_url"
+	AiRequestApiUrlParam       = "regional_ai_request_api_url"
 )
 
 // SecretNames is a default list of secret names to be pre-processed.
@@ -26,6 +29,11 @@ var SecretNames = []string{
 	AppleClientId,
 	AppleKeyId,
 	AppleTeamId,
+}
+
+var EmptyParamsToPopulate = []string{
+	RegionalBillingApiUrlParam,
+	AiRequestApiUrlParam,
 }
 
 // PreProcess retrieves multiple secure parameters from AWS SSM and returns them as a map.
@@ -95,4 +103,17 @@ func CopyInRegions(srcRegion string, dstRegions []string, paramNames []string) e
 // CopySecretNamesInRegions copies default SecretNames from srcRegion to multiple dstRegions.
 func CopySecretNamesInRegions(srcRegion string, dstRegions []string) error {
 	return CopyInRegions(srcRegion, dstRegions, SecretNames)
+}
+
+func BootStrapParamsInRegion(dstRegion string, params []string) error {
+	for _, param := range params {
+		if err := aws.PutParameterInRegion(dstRegion, param, ""); err != nil {
+			return fmt.Errorf("failed to bootstrap param %s in region %s: %w", param, dstRegion, err)
+		}
+	}
+	return nil
+}
+
+func BootStrapEmptyParamsInRegion(dstRegion string) error {
+	return BootStrapParamsInRegion(dstRegion, EmptyParamsToPopulate)
 }
