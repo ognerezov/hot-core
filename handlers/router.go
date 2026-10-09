@@ -48,7 +48,8 @@ type Router struct {
 	Domains              []string
 	AuthenticatedHandler LambdaHandler
 	InfoHandler          LambdaHandler
-	notFoundHandler      LambdaHandler
+	NotFoundHandler      LambdaHandler
+	ProfileHandler       LambdaHandler
 }
 
 func NewRouter(domains []string, authHandler LambdaHandler) *Router {
@@ -56,17 +57,17 @@ func NewRouter(domains []string, authHandler LambdaHandler) *Router {
 		Handlers:             make(map[string]LambdaHandler),
 		Domains:              domains,
 		AuthenticatedHandler: authHandler,
-		notFoundHandler:      NotFoundHandler,
+		NotFoundHandler:      NotFoundHandler,
 	}
 }
 
 func (r *Router) SetNotFoundHandler(handler LambdaHandler) {
-	r.notFoundHandler = handler
+	r.NotFoundHandler = handler
 }
 
 func (r *Router) GetNotFoundHandler() LambdaHandler {
-	if r.notFoundHandler != nil {
-		return r.notFoundHandler
+	if r.NotFoundHandler != nil {
+		return r.NotFoundHandler
 	}
 	return NotFoundHandler
 }
@@ -148,10 +149,19 @@ func (r *Router) ApiHandler(ctx context.Context, req events.APIGatewayV2HTTPRequ
 }
 
 func (r *Router) Start() {
-	if r.InfoHandler != nil {
-		r.RegisterResource("^/pub/info[/]?$", MethodRouter{
-			Get: InfoHandler,
-		})
+	inoHandler := r.InfoHandler
+	if inoHandler == nil {
+		inoHandler = InfoHandler
 	}
+	r.RegisterResource("^/pub/info[/]?$", MethodRouter{
+		Get: r.InfoHandler,
+	})
+	profileHandler := r.ProfileHandler
+	if profileHandler == nil {
+		profileHandler = GetProfileHandler
+	}
+	r.RegisterResource("^/pub/profile[/]?$", MethodRouter{
+		Get: profileHandler,
+	})
 	lambda.Start(r.ApiHandler)
 }
