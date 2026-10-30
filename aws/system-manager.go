@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -187,4 +188,31 @@ func CopyParametersInRegion(srcRegion, dstRegion string, names []string) error {
 		}
 	}
 	return nil
+}
+
+func PutStringIfNotRemoteEmpty(region string, name string, value string) error {
+	client := GetSsmClientInRegion(region)
+	ctx := context.Background()
+
+	output, err := client.GetParameter(ctx, &ssm.GetParameterInput{
+		Name:           aws.String(name),
+		WithDecryption: aws.Bool(false),
+	})
+
+	if err != nil {
+		var nfe *types.ParameterNotFound
+		if errors.As(err, &nfe) {
+
+			return PutStringInRegion(region, name, value)
+		}
+
+		return err
+	}
+
+	if output.Parameter != nil && output.Parameter.Value != nil && *output.Parameter.Value != "" {
+		fmt.Println("Parameter isn't empty")
+		return nil
+	}
+
+	return PutStringInRegion(region, name, value)
 }

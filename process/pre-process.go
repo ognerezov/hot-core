@@ -109,7 +109,7 @@ func CopySecretNamesInRegions(srcRegion string, dstRegions []string) error {
 
 func BootStrapParamsInRegion(dstRegion string, params []string) error {
 	for _, param := range params {
-		if err := aws.PutStringInRegion(dstRegion, param, NotInitialized); err != nil {
+		if err := aws.PutStringIfNotRemoteEmpty(dstRegion, param, NotInitialized); err != nil {
 			return fmt.Errorf("failed to bootstrap param %s in region %s: %w", param, dstRegion, err)
 		}
 	}
