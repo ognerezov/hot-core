@@ -12,7 +12,7 @@ var SupportedRegions = []string{
 
 var CentralRegion = "us-east-1"
 
-var ReplicationRegions = tools.RemoveAllStrings(AllRegions, CentralRegion)
+var ReplicationRegions = tools.RemoveAllStrings(SupportedRegions, CentralRegion)
 
 var AllRegions = []string{
 	"us-east-1",
