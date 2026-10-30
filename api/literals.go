@@ -5,6 +5,7 @@ var SupportedRegions = []string{
 	"us-east-1",
 	"us-east-2",
 	"eu-south-2",
+	"il-central-1",
 }
 
 var AllRegions = []string{
