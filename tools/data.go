@@ -91,3 +91,12 @@ func RestructureArrays(values [][]any, factor int) [][]any {
 	return result
 
 }
+func RemoveAllStrings(slice []string, target string) []string {
+	result := make([]string, 0, len(slice))
+	for _, v := range slice {
+		if v != target {
+			result = append(result, v)
+		}
+	}
+	return result
+}

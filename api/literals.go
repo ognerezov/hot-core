@@ -1,5 +1,7 @@
 package api
 
+import "github.com/ognerezov/hot-core/tools"
+
 // SupportedRegions is the single source of truth for all active AWS deployment regions.
 var SupportedRegions = []string{
 	"us-east-1",
@@ -7,6 +9,10 @@ var SupportedRegions = []string{
 	"eu-south-2",
 	"il-central-1",
 }
+
+var CentralRegion = "us-east-1"
+
+var ReplicationRegions = tools.RemoveAllStrings(AllRegions, CentralRegion)
 
 var AllRegions = []string{
 	"us-east-1",
