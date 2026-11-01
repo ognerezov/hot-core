@@ -46,18 +46,19 @@ func (m MethodRouter) Handle(ctx context.Context, req events.APIGatewayV2HTTPReq
 type Router struct {
 	Handlers             map[string]LambdaHandler
 	Domains              []string
+	HandleAuthenticated  bool
 	AuthenticatedHandler LambdaHandler
 	InfoHandler          LambdaHandler
 	NotFoundHandler      LambdaHandler
 	ProfileHandler       LambdaHandler
 }
 
-func NewRouter(domains []string, authHandler LambdaHandler) *Router {
+func NewRouter(domains []string, handleAuthenticated bool) *Router {
 	return &Router{
-		Handlers:             make(map[string]LambdaHandler),
-		Domains:              domains,
-		AuthenticatedHandler: authHandler,
-		NotFoundHandler:      NotFoundHandler,
+		Handlers:            make(map[string]LambdaHandler),
+		Domains:             domains,
+		HandleAuthenticated: handleAuthenticated,
+		NotFoundHandler:     NotFoundHandler,
 	}
 }
 
@@ -91,6 +92,21 @@ func (r *Router) MatchingHandler(_path string) *LambdaHandler {
 		}
 	}
 	return nil
+}
+
+// GetAuthenticatedHandler Have to check user id in each underlying handler
+func (r *Router) GetAuthenticatedHandler() LambdaHandler {
+	return func(ctx context.Context, event events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+		log.Info().Str("path", event.RawPath).Msg("This is authenticated route")
+		handler := r.MatchingHandler(event.RawPath)
+		if handler == nil {
+			log.Error().Msg("No handler for path")
+			return r.GetNotFoundHandler()(ctx, event)
+		}
+
+		return (*handler)(ctx, event)
+	}
+
 }
 
 func (r *Router) GetHandler(ctx context.Context, req events.APIGatewayV2HTTPRequest) LambdaHandler {
@@ -163,5 +179,8 @@ func (r *Router) Start() {
 	r.RegisterResource("^/pub/profile[/]?$", MethodRouter{
 		Get: profileHandler,
 	})
+	if r.HandleAuthenticated {
+		r.AuthenticatedHandler = r.GetAuthenticatedHandler()
+	}
 	lambda.Start(r.ApiHandler)
 }
