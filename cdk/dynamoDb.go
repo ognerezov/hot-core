@@ -14,6 +14,7 @@ type TableBuilder struct {
 	sortKey            *awsdynamodb.Attribute
 	billingMode        awsdynamodb.BillingMode
 	removalPolicy      awscdk.RemovalPolicy
+	stream             *awsdynamodb.StreamViewType
 	replicationRegions *[]*string
 }
 
@@ -52,6 +53,12 @@ func (b *TableBuilder) WithPartitionKey(name string, keyType awsdynamodb.Attribu
 	return b
 }
 
+// WithStream sets stream
+func (b *TableBuilder) WithStream(stream awsdynamodb.StreamViewType) *TableBuilder {
+	b.stream = &stream
+	return b
+}
+
 // WithSortKey sets the sort key for the table.
 func (b *TableBuilder) WithSortKey(name string, keyType awsdynamodb.AttributeType) *TableBuilder {
 	b.sortKey = &awsdynamodb.Attribute{
@@ -81,14 +88,18 @@ func (b *TableBuilder) WithReplicationRegions(regions *[]*string) *TableBuilder 
 
 // Build creates a new DynamoDB table using the properties.
 func (b *TableBuilder) Build(stack awscdk.Stack) awsdynamodb.ITable {
-	return awsdynamodb.NewTable(stack, jsii.String(b.tableName), &awsdynamodb.TableProps{
+	props := awsdynamodb.TableProps{
 		TableName:          jsii.String(b.tableName),
 		PartitionKey:       b.partitionKey,
 		SortKey:            b.sortKey,
 		BillingMode:        b.billingMode,
 		RemovalPolicy:      b.removalPolicy,
 		ReplicationRegions: b.replicationRegions,
-	})
+	}
+	if b.stream != nil {
+		props.Stream = *b.stream
+	}
+	return awsdynamodb.NewTable(stack, jsii.String(b.tableName), &props)
 }
 
 // DynamoDbTableByName imports an existing DynamoDB table by its name.
