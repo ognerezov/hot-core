@@ -279,7 +279,12 @@ func getLambdaPoolRole(stack constructs.Construct, arn string, projectName strin
 		userPool = arn
 	}
 	lambdaRole.AddToPolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
-		Actions:   jsii.Strings("cognito-idp:AdminGetUser", "cognito-idp:AdminCreateUser", "cognito-idp:AdminSetUserPassword", "cognito-idp:ListUsers"),
+		Actions: jsii.Strings("cognito-idp:AdminGetUser",
+			"cognito-idp:AdminCreateUser",
+			"cognito-idp:AdminSetUserPassword",
+			"cognito-idp:ListUsers",
+			"cognito-idp:ListUsers",
+			"cognito-idp:AdminDeleteUser"),
 		Resources: jsii.Strings(userPool),
 	}))
 	return &lambdaRole
