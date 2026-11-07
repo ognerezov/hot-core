@@ -158,7 +158,7 @@ func (r *Router) OptionsHandler(_ context.Context, _ events.APIGatewayV2HTTPRequ
 	}, nil
 }
 
-func (r *Router) ApiHandler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (interface{}, error) {
+func (r *Router) ApiHandler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	log.Info().Str("path", req.RawPath).Msg(fmt.Sprintf("%v", req.PathParameters))
 	handler := r.GetHandler(ctx, req)
 	return r.WithCorsHeaders(handler(ctx, req))
