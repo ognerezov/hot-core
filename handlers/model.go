@@ -26,7 +26,7 @@ func ErrorResponse(err error, code int) (events.APIGatewayV2HTTPResponse, error)
 	return WithJsonContentType(events.APIGatewayV2HTTPResponse{
 		StatusCode: code,
 		Body:       StringToJson(err.Error(), "error"),
-	}, err)
+	}, nil)
 }
 
 func JsonResponse(data any, code int) (events.APIGatewayV2HTTPResponse, error) {
