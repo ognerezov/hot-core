@@ -25,13 +25,24 @@ type AppInfo struct {
 	Apis                  map[string]string `json:"apis,omitzero"`
 }
 
-func InfoHandler(_ context.Context, _ events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+var cachedResponse events.APIGatewayV2HTTPResponse
+
+func init() {
+	// Вся тяжелая работа по парсингу окружения делается ОДИН РАЗ при старте контейнера
+	version = os.Getenv("APP_VERSION")
 	if version == "" {
-		version = os.Getenv("APP_VERSION")
-		if version == "" {
-			version = "unknown"
+		version = "unknown"
+	}
+
+	apis := make(map[string]string)
+	for _, env := range os.Environ() {
+		if key, value, found := strings.Cut(env, "="); found && strings.HasPrefix(key, "INFO_") {
+			rawKey := strings.TrimPrefix(key, "INFO_")
+			camelKey := toCamelCase(rawKey)
+			apis[camelKey] = value
 		}
 	}
+
 	info := AppInfo{
 		Version:               version,
 		Region:                os.Getenv("AWS_REGION"),
@@ -43,18 +54,15 @@ func InfoHandler(_ context.Context, _ events.APIGatewayV2HTTPRequest) (events.AP
 		AppSyncAuthType:       "AMAZON_COGNITO_USER_POOLS",
 		UserPoolId:            os.Getenv("USER_POOL_ID"),
 		IdentityPoolId:        os.Getenv("IDENTITY_POOL_ID"),
-		Apis:                  make(map[string]string),
+		Apis:                  apis,
 	}
 
-	for _, env := range os.Environ() {
-		if key, value, found := strings.Cut(env, "="); found && strings.HasPrefix(key, "INFO_") {
-			rawKey := strings.TrimPrefix(key, "INFO_")
-			camelKey := toCamelCase(rawKey)
-			info.Apis[camelKey] = value
-		}
-	}
+	cachedResponse, _ = JsonResponse(info, 200)
+}
 
-	return JsonResponse(info, 200)
+func InfoHandler(_ context.Context, _ events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+
+	return cachedResponse, nil
 }
 
 func toCamelCase(s string) string {
