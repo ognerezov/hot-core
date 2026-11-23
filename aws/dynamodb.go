@@ -81,6 +81,59 @@ func GetOnboardingProgress(ctx context.Context, client *dynamodb.Client, table, 
 	return &onboarding, nil
 }
 
+// StartOnboarding creates the user's progress and queues the first quest's reward.
+// It returns nil if onboarding already exists or there are no quests.
+func StartOnboarding(ctx context.Context, client *dynamodb.Client, table, username string, quests []api.Quest) (*api.QuestCompleteResult, error) {
+	if len(quests) == 0 {
+		return nil, nil
+	}
+
+	first := quests[0]
+	if first.Id == "" {
+		return nil, errors.New("first onboarding quest has no ID")
+	}
+	progress := map[string]string{first.Id: api.ProcessingReward}
+	result := &api.QuestCompleteResult{Reward: first.Reward, Next: []api.Quest{}}
+	if len(quests) > 1 {
+		next := quests[1]
+		if next.Id == "" || next.Id == first.Id {
+			return nil, errors.New("second onboarding quest must have a distinct ID")
+		}
+		progress[next.Id] = api.Started
+		result.Next = append(result.Next, next)
+	}
+
+	item, err := attributevalue.MarshalMap(api.OnboardingProgress{
+		PK:       username,
+		SK:       api.OnboardingDone,
+		Progress: progress,
+		PendingRewards: []api.ReceivedRewards{{
+			Reward:    first.Reward,
+			Date:      time.Now().UTC().Format(time.RFC3339Nano),
+			QuestId:   first.Id,
+			QuestName: first.Name,
+		}},
+		ReceivedRewards: []api.ReceivedRewards{},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode initial onboarding progress: %w", err)
+	}
+	_, err = client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName:                aws.String(table),
+		Item:                     item,
+		ConditionExpression:      aws.String("attribute_not_exists(#pk)"),
+		ExpressionAttributeNames: map[string]string{"#pk": "PK"},
+	})
+	var conditionFailed *types.ConditionalCheckFailedException
+	if errors.As(err, &conditionFailed) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("start onboarding: %w", err)
+	}
+	return result, nil
+}
+
 // CompleteQuest moves a started quest to reward processing. It returns nil
 // when the quest is unknown or a reward cannot be started.
 func CompleteQuest(ctx context.Context, client *dynamodb.Client, table, username, questID string, quests []api.Quest) (*api.QuestCompleteResult, error) {

@@ -17,6 +17,69 @@ import (
 
 const conditionalFailure = `{"__type":"com.amazonaws.dynamodb.v20120810#ConditionalCheckFailedException"}`
 
+func TestStartOnboarding(t *testing.T) {
+	first := api.Quest{Id: "first", Name: "First quest", Reward: 25}
+	second := api.Quest{Id: "second", Name: "Second quest", Reward: 40}
+	for _, tc := range []struct {
+		name     string
+		quests   []api.Quest
+		progress map[string]any
+		next     []api.Quest
+	}{
+		{
+			name:     "single quest",
+			quests:   []api.Quest{first},
+			progress: map[string]any{"first": map[string]any{"S": api.ProcessingReward}},
+			next:     []api.Quest{},
+		},
+		{
+			name:   "starts the second quest",
+			quests: []api.Quest{first, second, {Id: "third"}},
+			progress: map[string]any{
+				"first":  map[string]any{"S": api.ProcessingReward},
+				"second": map[string]any{"S": api.Started},
+			},
+			next: []api.Quest{second},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			client := questTestClient(t, func(operation string, body map[string]any) (int, string) {
+				require.Equal(t, "DynamoDB_20120810.PutItem", operation)
+				require.Equal(t, "quests", body["TableName"])
+				require.Equal(t, "attribute_not_exists(#pk)", body["ConditionExpression"])
+				require.Equal(t, map[string]any{"#pk": "PK"}, body["ExpressionAttributeNames"])
+				item := body["Item"].(map[string]any)
+				require.Equal(t, map[string]any{"M": tc.progress}, item["Progress"])
+				reward := requireReward(t, item["PendingRewards"])
+				require.Equal(t, first.Id, reward.QuestId)
+				require.Equal(t, first.Name, reward.QuestName)
+				require.Equal(t, first.Reward, reward.Reward)
+				require.Equal(t, map[string]any{"L": []any{}}, item["ReceivedRewards"])
+				calls++
+				if calls == 2 {
+					return http.StatusBadRequest, conditionalFailure
+				}
+				return http.StatusOK, "{}"
+			})
+			result, err := StartOnboarding(t.Context(), client, "quests", "alice", tc.quests)
+			require.NoError(t, err)
+			require.Equal(t, &api.QuestCompleteResult{Reward: first.Reward, Next: tc.next}, result)
+
+			result, err = StartOnboarding(t.Context(), client, "quests", "alice", tc.quests)
+			require.NoError(t, err)
+			require.Nil(t, result)
+			require.Equal(t, 2, calls)
+		})
+	}
+}
+
+func TestStartOnboardingSkipsEmptyQuestList(t *testing.T) {
+	result, err := StartOnboarding(t.Context(), nil, "quests", "alice", nil)
+	require.NoError(t, err)
+	require.Nil(t, result)
+}
+
 func TestCompleteQuestStartsReward(t *testing.T) {
 	quests := []api.Quest{{Id: "first.quest", Name: "First quest", Reward: 25}, {Id: "next"}}
 	calls := 0
@@ -218,10 +281,18 @@ func questTestClient(t *testing.T, respond func(string, map[string]any) (int, st
 		HTTPClient: &http.Client{Transport: MockTransport(func(req *http.Request) (*http.Response, error) {
 			var body map[string]any
 			require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
-			require.Equal(t, map[string]any{
+			expectedKey := map[string]any{
 				"PK": map[string]any{"S": "alice"}, "SK": map[string]any{"S": api.OnboardingDone},
-			}, body["Key"])
-			status, payload := respond(req.Header.Get("X-Amz-Target"), body)
+			}
+			operation := req.Header.Get("X-Amz-Target")
+			if operation == "DynamoDB_20120810.PutItem" {
+				item := body["Item"].(map[string]any)
+				require.Equal(t, expectedKey["PK"], item["PK"])
+				require.Equal(t, expectedKey["SK"], item["SK"])
+			} else {
+				require.Equal(t, expectedKey, body["Key"])
+			}
+			status, payload := respond(operation, body)
 			return &http.Response{
 				StatusCode: status,
 				Header:     http.Header{"Content-Type": {"application/x-amz-json-1.0"}},
