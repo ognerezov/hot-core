@@ -28,7 +28,6 @@ type AppInfo struct {
 var cachedResponse events.APIGatewayV2HTTPResponse
 
 func init() {
-	// Вся тяжелая работа по парсингу окружения делается ОДИН РАЗ при старте контейнера
 	version = os.Getenv("APP_VERSION")
 	if version == "" {
 		version = "unknown"
