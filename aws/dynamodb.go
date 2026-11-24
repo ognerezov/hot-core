@@ -60,7 +60,7 @@ func GetOnboardingConfig(ctx context.Context, client *dynamodb.Client, table, so
 	if err = attributevalue.UnmarshalMap(item.Item, &cfg); err != nil {
 		return nil, fmt.Errorf("decode onboarding configuration: %w", err)
 	}
-	return cfg.Quests, nil
+	return cfg.Items, nil
 }
 
 // GetOnboardingProgress decodes the user's onboarding progress.

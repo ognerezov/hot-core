@@ -17,9 +17,9 @@ type Quest struct {
 }
 
 type OnboardingConfig struct {
-	PK     string
-	SK     string
-	Quests []Quest
+	PK    string
+	SK    string
+	Items []Quest
 }
 
 type OnboardingProgress struct {
