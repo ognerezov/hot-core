@@ -47,7 +47,10 @@ func GetDynamoClient() *dynamodb.Client {
 func GetOnboardingConfig(ctx context.Context, client *dynamodb.Client, table, sortKey string) ([]api.Quest, error) {
 	item, err := client.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(table),
-		Key:       dynamoKey(api.Onboarding, sortKey),
+		Key: map[string]types.AttributeValue{
+			"ConfigType": &types.AttributeValueMemberS{Value: api.Onboarding},
+			"ConfigKey":  &types.AttributeValueMemberS{Value: sortKey},
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("get onboarding configuration: %w", err)
