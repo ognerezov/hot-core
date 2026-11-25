@@ -204,14 +204,7 @@ func OnRewardProcessed(ctx context.Context, client *dynamodb.Client, table strin
 	for i := range received {
 		received[i].Date = processedAt
 		reward := batch[i]
-		index := slices.IndexFunc(quests, func(quest api.Quest) bool {
-			return reward.QuestId != "" && quest.Id == reward.QuestId
-		})
-		if index < 0 {
-			index = slices.IndexFunc(quests, func(quest api.Quest) bool {
-				return reward.QuestName != "" && quest.Name == reward.QuestName
-			})
-		}
+		index := FindQuest(quests, reward)
 		if index < 0 {
 			log.Error().Str("questID", reward.QuestId).Str("questName", reward.QuestName).
 				Msg("Processed onboarding quest missing from configuration")
@@ -339,6 +332,18 @@ func OnRewardProcessed(ctx context.Context, client *dynamodb.Client, table strin
 			return false, onboarding, errors.New("invalid ReceivedRewards attribute: expected a list")
 		}
 	}
+}
+
+func FindQuest(quests []api.Quest, reward api.ReceivedRewards) int {
+	index := slices.IndexFunc(quests, func(quest api.Quest) bool {
+		return reward.QuestId != "" && quest.Id == reward.QuestId
+	})
+	if index < 0 {
+		index = slices.IndexFunc(quests, func(quest api.Quest) bool {
+			return reward.QuestName != "" && quest.Name == reward.QuestName
+		})
+	}
+	return index
 }
 
 func dynamoKey(partitionKey, sortKey string) map[string]types.AttributeValue {
