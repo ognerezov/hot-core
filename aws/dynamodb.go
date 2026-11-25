@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/ognerezov/hot-core/api"
+	"github.com/rs/zerolog/log"
 )
 
 var (
@@ -180,9 +181,9 @@ func CompleteQuest(ctx context.Context, client *dynamodb.Client, table, username
 	return true, nil
 }
 
-// OnRewardProcessed moves the supplied pending rewards into history.
+// OnRewardProcessed moves pending rewards into history and starts their next quests.
 // It returns false if the batch is empty or is no longer pending.
-func OnRewardProcessed(ctx context.Context, client *dynamodb.Client, table string, onboarding api.OnboardingProgress) (bool, error) {
+func OnRewardProcessed(ctx context.Context, client *dynamodb.Client, table string, onboarding api.OnboardingProgress, quests []api.Quest) (bool, error) {
 	batch := onboarding.PendingRewards
 	if len(batch) == 0 {
 		return false, nil
@@ -197,8 +198,28 @@ func OnRewardProcessed(ctx context.Context, client *dynamodb.Client, table strin
 	}
 	received := slices.Clone(batch)
 	processedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	nextQuestIDs := make([]string, 0, len(batch))
+	completedConfigIDs := make(map[string]struct{}, len(batch))
 	for i := range received {
 		received[i].Date = processedAt
+		reward := batch[i]
+		index := slices.IndexFunc(quests, func(quest api.Quest) bool {
+			return reward.QuestId != "" && quest.Id == reward.QuestId
+		})
+		if index < 0 {
+			index = slices.IndexFunc(quests, func(quest api.Quest) bool {
+				return reward.QuestName != "" && quest.Name == reward.QuestName
+			})
+		}
+		if index < 0 {
+			log.Error().Str("questID", reward.QuestId).Str("questName", reward.QuestName).
+				Msg("Processed onboarding quest missing from configuration")
+			continue
+		}
+		completedConfigIDs[quests[index].Id] = struct{}{}
+		if index+1 < len(quests) && quests[index+1].Id != "" {
+			nextQuestIDs = append(nextQuestIDs, quests[index+1].Id)
+		}
 	}
 	rewards, err := attributevalue.Marshal(received)
 	if err != nil {
@@ -220,6 +241,14 @@ func OnRewardProcessed(ctx context.Context, client *dynamodb.Client, table strin
 		for _, reward := range batch {
 			if reward.QuestId != "" {
 				completed[reward.QuestId] = &types.AttributeValueMemberS{Value: api.Completed}
+			}
+		}
+		for _, questID := range nextQuestIDs {
+			_, alreadyProcessed := completedConfigIDs[questID]
+			value, exists := completed[questID]
+			status, isString := value.(*types.AttributeValueMemberS)
+			if !alreadyProcessed && (!exists || (isString && status.Value == "")) {
+				completed[questID] = &types.AttributeValueMemberS{Value: api.Started}
 			}
 		}
 

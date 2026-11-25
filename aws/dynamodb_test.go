@@ -130,6 +130,7 @@ func TestOnRewardProcessedCompletesBatchRegardlessOfQuestStatus(t *testing.T) {
 		ReceivedRewards: []api.ReceivedRewards{},
 	}
 
+	quests := []api.Quest{{Id: "first.quest"}, {Id: "second"}, {Id: "third"}}
 	calls := 0
 	client := questTestClient(t, func(operation string, body map[string]any) (int, string) {
 		calls++
@@ -142,6 +143,7 @@ func TestOnRewardProcessedCompletesBatchRegardlessOfQuestStatus(t *testing.T) {
 		require.Equal(t, map[string]any{"M": map[string]any{
 			"first.quest": map[string]any{"S": api.Completed},
 			"second":      map[string]any{"S": api.Completed},
+			"third":       map[string]any{"S": api.Started},
 			"unrelated":   map[string]any{"S": api.ProcessingReward},
 		}}, values[":completed"])
 		rewards := decodeTestRewards(t, values[":rewards"])
@@ -158,16 +160,81 @@ func TestOnRewardProcessedCompletesBatchRegardlessOfQuestStatus(t *testing.T) {
 		return http.StatusOK, "{}"
 	})
 
-	processed, err := OnRewardProcessed(t.Context(), client, "quests", onboarding)
+	processed, err := OnRewardProcessed(t.Context(), client, "quests", onboarding, quests)
 	require.NoError(t, err)
 	require.True(t, processed)
 	require.Equal(t, queuedAt, onboarding.PendingRewards[0].Date)
 	require.Equal(t, api.Started, onboarding.Progress["first.quest"])
 
-	processed, err = OnRewardProcessed(t.Context(), client, "quests", onboarding)
+	processed, err = OnRewardProcessed(t.Context(), client, "quests", onboarding, quests)
 	require.NoError(t, err)
 	require.False(t, processed)
 	require.Equal(t, 2, calls)
+}
+
+func TestOnRewardProcessedPreservesNextQuestStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name, existing, expected string
+	}{
+		{"empty", "", api.Started},
+		{"started", api.Started, api.Started},
+		{"processing", api.ProcessingReward, api.ProcessingReward},
+		{"completed", api.Completed, api.Completed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			onboarding := api.OnboardingProgress{
+				PK:             "alice",
+				SK:             api.OnboardingDone,
+				Progress:       map[string]string{"first": api.ProcessingReward, "next": tc.existing},
+				PendingRewards: []api.ReceivedRewards{{QuestId: "first"}},
+			}
+			quests := []api.Quest{{Id: "first"}, {Id: "next"}}
+			client := questTestClient(t, func(operation string, body map[string]any) (int, string) {
+				require.Equal(t, "DynamoDB_20120810.UpdateItem", operation)
+				values := body["ExpressionAttributeValues"].(map[string]any)
+				require.Equal(t, map[string]any{"M": map[string]any{
+					"first": map[string]any{"S": api.Completed},
+					"next":  map[string]any{"S": tc.expected},
+				}}, values[":completed"])
+				return http.StatusOK, "{}"
+			})
+
+			processed, err := OnRewardProcessed(t.Context(), client, "quests", onboarding, quests)
+			require.NoError(t, err)
+			require.True(t, processed)
+		})
+	}
+}
+
+func TestOnRewardProcessedFallsBackToQuestName(t *testing.T) {
+	onboarding := api.OnboardingProgress{
+		PK: "alice",
+		SK: api.OnboardingDone,
+		Progress: map[string]string{
+			"old-id":  api.ProcessingReward,
+			"removed": api.ProcessingReward,
+		},
+		PendingRewards: []api.ReceivedRewards{
+			{QuestId: "old-id", QuestName: "First quest"},
+			{QuestId: "removed", QuestName: "Removed quest"},
+		},
+	}
+	quests := []api.Quest{{Id: "new-id", Name: "First quest"}, {Id: "next"}}
+	client := questTestClient(t, func(operation string, body map[string]any) (int, string) {
+		require.Equal(t, "DynamoDB_20120810.UpdateItem", operation)
+		values := body["ExpressionAttributeValues"].(map[string]any)
+		require.Equal(t, map[string]any{"M": map[string]any{
+			"old-id":  map[string]any{"S": api.Completed},
+			"removed": map[string]any{"S": api.Completed},
+			"next":    map[string]any{"S": api.Started},
+		}}, values[":completed"])
+		require.Len(t, decodeTestRewards(t, values[":rewards"]), 2)
+		return http.StatusOK, "{}"
+	})
+
+	processed, err := OnRewardProcessed(t.Context(), client, "quests", onboarding, quests)
+	require.NoError(t, err)
+	require.True(t, processed)
 }
 
 func TestOnRewardProcessedInitializesMissingOrNullAttributes(t *testing.T) {
@@ -187,7 +254,7 @@ func TestOnRewardProcessedInitializesMissingOrNullAttributes(t *testing.T) {
 		require.Equal(t, 25, reward.Reward)
 		return http.StatusOK, "{}"
 	})
-	processed, err := OnRewardProcessed(t.Context(), client, "quests", onboarding)
+	processed, err := OnRewardProcessed(t.Context(), client, "quests", onboarding, []api.Quest{{Id: "first"}})
 	require.NoError(t, err)
 	require.True(t, processed)
 }
@@ -229,14 +296,14 @@ func TestOnRewardProcessedPreservesConcurrentUpdates(t *testing.T) {
 		return http.StatusOK, "{}"
 	})
 
-	processed, err := OnRewardProcessed(t.Context(), client, "quests", onboarding)
+	processed, err := OnRewardProcessed(t.Context(), client, "quests", onboarding, []api.Quest{{Id: "first"}, {Id: "later"}})
 	require.NoError(t, err)
 	require.True(t, processed)
 	require.Equal(t, 2, calls)
 }
 
 func TestOnRewardProcessedSkipsEmptyBatch(t *testing.T) {
-	processed, err := OnRewardProcessed(t.Context(), nil, "quests", api.OnboardingProgress{})
+	processed, err := OnRewardProcessed(t.Context(), nil, "quests", api.OnboardingProgress{}, nil)
 	require.NoError(t, err)
 	require.False(t, processed)
 }
