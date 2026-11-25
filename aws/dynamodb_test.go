@@ -81,7 +81,6 @@ func TestStartOnboardingSkipsEmptyQuestList(t *testing.T) {
 }
 
 func TestCompleteQuestStartsReward(t *testing.T) {
-	quests := []api.Quest{{Id: "first.quest", Name: "First quest", Reward: 25}, {Id: "next"}}
 	calls := 0
 	client := questTestClient(t, func(target string, body map[string]any) (int, string) {
 		require.Equal(t, "DynamoDB_20120810.UpdateItem", target)
@@ -89,40 +88,30 @@ func TestCompleteQuestStartsReward(t *testing.T) {
 		require.Equal(t, "SET #progress.#quest = :processing, #pending = list_append(if_not_exists(#pending, :emptyList), :rewards)", body["UpdateExpression"])
 		names := body["ExpressionAttributeNames"].(map[string]any)
 		require.Equal(t, "PendingRewards", names["#pending"])
+		require.Equal(t, "first.quest", names["#quest"])
 		values := body["ExpressionAttributeValues"].(map[string]any)
 		require.Equal(t, map[string]any{"S": api.ProcessingReward}, values[":processing"])
+		require.Equal(t, map[string]any{"S": api.Started}, values[":started"])
 		reward := requireReward(t, values[":rewards"])
-		require.Equal(t, names["#quest"], reward.QuestId)
+		require.Equal(t, "first.quest", reward.QuestId)
+		require.Equal(t, "First quest", reward.QuestName)
+		require.Zero(t, reward.Reward)
+
 		calls++
-		switch calls {
-		case 1:
-			require.Equal(t, "first.quest", reward.QuestId)
-			require.Equal(t, "First quest", reward.QuestName)
-			require.Equal(t, 25, reward.Reward)
-		case 2:
-			require.Equal(t, "next", reward.QuestId)
-		default:
+		if calls == 2 {
 			return http.StatusBadRequest, conditionalFailure
 		}
 		return http.StatusOK, "{}"
 	})
 
-	result, err := CompleteQuest(t.Context(), client, "quests", "alice", "first.quest", quests)
+	updated, err := CompleteQuest(t.Context(), client, "quests", "alice", "first.quest", "First quest")
 	require.NoError(t, err)
-	require.Equal(t, &api.QuestCompleteResult{Reward: 25, Next: quests[1:]}, result)
+	require.True(t, updated)
 
-	result, err = CompleteQuest(t.Context(), client, "quests", "alice", "next", quests)
+	updated, err = CompleteQuest(t.Context(), client, "quests", "alice", "first.quest", "First quest")
 	require.NoError(t, err)
-	require.Equal(t, &api.QuestCompleteResult{Next: []api.Quest{}}, result)
-
-	result, err = CompleteQuest(t.Context(), client, "quests", "alice", "first.quest", quests)
-	require.NoError(t, err)
-	require.Nil(t, result)
-
-	result, err = CompleteQuest(t.Context(), client, "quests", "alice", "unknown", quests)
-	require.NoError(t, err)
-	require.Nil(t, result)
-	require.Equal(t, 3, calls)
+	require.False(t, updated)
+	require.Equal(t, 2, calls)
 }
 
 func TestOnRewardProcessedCompletesBatchRegardlessOfQuestStatus(t *testing.T) {

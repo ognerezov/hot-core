@@ -137,55 +137,47 @@ func StartOnboarding(ctx context.Context, client *dynamodb.Client, table, userna
 	return result, nil
 }
 
-// CompleteQuest moves a started quest to reward processing. It returns nil
-// when the quest is unknown or a reward cannot be started.
-func CompleteQuest(ctx context.Context, client *dynamodb.Client, table, username, questID string, quests []api.Quest) (*api.QuestCompleteResult, error) {
-	for i, quest := range quests {
-		if quest.Id != questID {
-			continue
-		}
-
-		rewards, err := attributevalue.Marshal([]api.ReceivedRewards{{
-			Reward:    quest.Reward,
-			Date:      time.Now().UTC().Format(time.RFC3339Nano),
-			QuestId:   questID,
-			QuestName: quest.Name,
-		}})
-		if err != nil {
-			return nil, fmt.Errorf("encode pending onboarding reward: %w", err)
-		}
-		_, err = client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
-			TableName:           aws.String(table),
-			Key:                 dynamoKey(username, api.OnboardingDone),
-			ConditionExpression: aws.String("#progress.#quest = :started"),
-			UpdateExpression:    aws.String("SET #progress.#quest = :processing, #pending = list_append(if_not_exists(#pending, :emptyList), :rewards)"),
-			ExpressionAttributeNames: map[string]string{
-				"#progress": "Progress",
-				"#quest":    questID,
-				"#pending":  "PendingRewards",
-			},
-			ExpressionAttributeValues: map[string]types.AttributeValue{
-				":started":    &types.AttributeValueMemberS{Value: api.Started},
-				":processing": &types.AttributeValueMemberS{Value: api.ProcessingReward},
-				":emptyList":  &types.AttributeValueMemberL{},
-				":rewards":    rewards,
-			},
-		})
-		var conditionFailed *types.ConditionalCheckFailedException
-		if errors.As(err, &conditionFailed) {
-			return nil, nil
-		}
-		if err != nil {
-			return nil, fmt.Errorf("complete onboarding quest: %w", err)
-		}
-
-		result := &api.QuestCompleteResult{Reward: quest.Reward, Next: []api.Quest{}}
-		if i+1 < len(quests) {
-			result.Next = append(result.Next, quests[i+1])
-		}
-		return result, nil
+// CompleteQuest queues a reward entry and returns true if the started quest was updated.
+func CompleteQuest(ctx context.Context, client *dynamodb.Client, table, username, questID, questName string) (bool, error) {
+	if questID == "" {
+		return false, nil
 	}
-	return nil, nil
+
+	rewards, err := attributevalue.Marshal([]api.ReceivedRewards{{
+		Reward:    0,
+		Date:      time.Now().UTC().Format(time.RFC3339Nano),
+		QuestId:   questID,
+		QuestName: questName,
+	}})
+	if err != nil {
+		return false, fmt.Errorf("encode pending onboarding reward: %w", err)
+	}
+	_, err = client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:           aws.String(table),
+		Key:                 dynamoKey(username, api.OnboardingDone),
+		ConditionExpression: aws.String("#progress.#quest = :started"),
+		UpdateExpression:    aws.String("SET #progress.#quest = :processing, #pending = list_append(if_not_exists(#pending, :emptyList), :rewards)"),
+		ExpressionAttributeNames: map[string]string{
+			"#progress": "Progress",
+			"#quest":    questID,
+			"#pending":  "PendingRewards",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":started":    &types.AttributeValueMemberS{Value: api.Started},
+			":processing": &types.AttributeValueMemberS{Value: api.ProcessingReward},
+			":emptyList":  &types.AttributeValueMemberL{},
+			":rewards":    rewards,
+		},
+	})
+	var conditionFailed *types.ConditionalCheckFailedException
+	if errors.As(err, &conditionFailed) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("complete onboarding quest: %w", err)
+	}
+
+	return true, nil
 }
 
 // OnRewardProcessed moves the supplied pending rewards into history.
