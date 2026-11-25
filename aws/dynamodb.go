@@ -182,19 +182,20 @@ func CompleteQuest(ctx context.Context, client *dynamodb.Client, table, username
 }
 
 // OnRewardProcessed moves pending rewards into history and starts their next quests.
-// It returns false if the batch is empty or is no longer pending.
-func OnRewardProcessed(ctx context.Context, client *dynamodb.Client, table string, onboarding api.OnboardingProgress, quests []api.Quest) (bool, error) {
+// It returns the saved progress after a successful write and the original otherwise.
+// The bool reports whether DynamoDB accepted the write.
+func OnRewardProcessed(ctx context.Context, client *dynamodb.Client, table string, onboarding api.OnboardingProgress, quests []api.Quest) (bool, api.OnboardingProgress, error) {
 	batch := onboarding.PendingRewards
 	if len(batch) == 0 {
-		return false, nil
+		return false, onboarding, nil
 	}
 	if onboarding.PK == "" || onboarding.SK != api.OnboardingDone {
-		return false, errors.New("invalid onboarding progress key")
+		return false, onboarding, errors.New("invalid onboarding progress key")
 	}
 
 	pending, err := attributevalue.Marshal(batch)
 	if err != nil {
-		return false, fmt.Errorf("encode pending onboarding rewards: %w", err)
+		return false, onboarding, fmt.Errorf("encode pending onboarding rewards: %w", err)
 	}
 	received := slices.Clone(batch)
 	processedAt := time.Now().UTC().Format(time.RFC3339Nano)
@@ -223,11 +224,11 @@ func OnRewardProcessed(ctx context.Context, client *dynamodb.Client, table strin
 	}
 	rewards, err := attributevalue.Marshal(received)
 	if err != nil {
-		return false, fmt.Errorf("encode received onboarding rewards: %w", err)
+		return false, onboarding, fmt.Errorf("encode received onboarding rewards: %w", err)
 	}
 	progress, err := attributevalue.Marshal(onboarding.Progress)
 	if err != nil {
-		return false, fmt.Errorf("encode onboarding progress: %w", err)
+		return false, onboarding, fmt.Errorf("encode onboarding progress: %w", err)
 	}
 
 	key := dynamoKey(onboarding.PK, onboarding.SK)
@@ -284,7 +285,7 @@ func OnRewardProcessed(ctx context.Context, client *dynamodb.Client, table strin
 			values[":remaining"] = &types.AttributeValueMemberL{Value: remaining}
 		}
 
-		_, err = client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		output, err := client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 			TableName:           aws.String(table),
 			Key:                 key,
 			ConditionExpression: aws.String(condition),
@@ -295,26 +296,34 @@ func OnRewardProcessed(ctx context.Context, client *dynamodb.Client, table strin
 				"#received": "ReceivedRewards",
 			},
 			ExpressionAttributeValues:           values,
+			ReturnValues:                        types.ReturnValueAllNew,
 			ReturnValuesOnConditionCheckFailure: types.ReturnValuesOnConditionCheckFailureAllOld,
 		})
 		if err == nil {
-			return true, nil
+			var saved api.OnboardingProgress
+			if len(output.Attributes) == 0 {
+				return true, onboarding, errors.New("updated onboarding progress missing from DynamoDB response")
+			}
+			if err := attributevalue.UnmarshalMap(output.Attributes, &saved); err != nil {
+				return true, onboarding, fmt.Errorf("decode saved onboarding progress: %w", err)
+			}
+			return true, saved, nil
 		}
 		var conflict *types.ConditionalCheckFailedException
 		if !errors.As(err, &conflict) {
-			return false, fmt.Errorf("record processed onboarding rewards: %w", err)
+			return false, onboarding, fmt.Errorf("record processed onboarding rewards: %w", err)
 		}
 
 		current, ok := conflict.Item["PendingRewards"].(*types.AttributeValueMemberL)
 		if !ok || len(current.Value) < len(batch) {
-			return false, nil
+			return false, onboarding, nil
 		}
 		var currentBatch []api.ReceivedRewards
 		if err := attributevalue.UnmarshalList(current.Value[:len(batch)], &currentBatch); err != nil {
-			return false, fmt.Errorf("decode pending onboarding rewards after conflict: %w", err)
+			return false, onboarding, fmt.Errorf("decode pending onboarding rewards after conflict: %w", err)
 		}
 		if !slices.Equal(batch, currentBatch) {
-			return false, nil
+			return false, onboarding, nil
 		}
 
 		// Retry the same batch against the returned item, preserving newly queued rewards.
@@ -327,7 +336,7 @@ func OnRewardProcessed(ctx context.Context, client *dynamodb.Client, table strin
 		case *types.AttributeValueMemberL:
 			historyExists = true
 		default:
-			return false, errors.New("invalid ReceivedRewards attribute: expected a list")
+			return false, onboarding, errors.New("invalid ReceivedRewards attribute: expected a list")
 		}
 	}
 }
