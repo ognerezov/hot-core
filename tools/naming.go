@@ -47,3 +47,10 @@ func ToPascalCase(s string) string {
 	}
 	return strings.Join(parts, "")
 }
+
+func StagedName(name string, staging bool) string {
+	if staging {
+		return name + "-staging"
+	}
+	return name
+}
